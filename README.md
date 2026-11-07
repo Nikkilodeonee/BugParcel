@@ -17,7 +17,7 @@ mvn verify
 java -jar target/bugparcel-1.0.0.jar
 ```
 
-Open **http://127.0.0.1:8087** and click **Try a sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
+Open **http://127.0.0.1:8087** and click **Open the sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
 
 On Windows, double-click `start-bugparcel.cmd`. It uses the built JAR when available and builds it otherwise. To rebuild after changes:
 
@@ -76,7 +76,7 @@ A synthetic shop checkout has six browser requests and nine server log entries:
 - An order poll shares the payment trace, so it is labeled as shared trace context.
 - A shipping request has no matching identifier. Two unrelated log entries remain unlinked.
 
-Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked logs**. The data is fictional, including all credentials and contact details. Download the files from **Get sample files** to try importing them yourself.
+Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked logs**. The data is fictional, including all credentials and contact details. Download the files from **Sample files** in the header to try importing them yourself.
 
 ## What works
 
@@ -89,7 +89,7 @@ Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked l
 - Turn redaction categories on or off and preview the resulting evidence. Bodies are excluded by default.
 - Review every detected value with its categories, source locations, and substitution count. Choose **Automatic**, **Redact all occurrences**, or **Keep value**. Ambiguous address-like values remain listed even when automatic rules leave them visible. Search and pagination cover the full detected list.
 - Export standalone HTML, Markdown, or normalized JSON. Export always re-analyzes the original in-memory input with the current settings.
-- Keyboard-accessible controls, responsive layouts, visible focus states, and a `/` shortcut for request search.
+- Keyboard-accessible controls, responsive layouts, visible focus states, a `/` shortcut for request search, and light and dark themes that follow your system setting.
 
 ![Local detected-value review](docs/redaction-review.jpg)
 

@@ -20,7 +20,11 @@ One Spring Boot executable serves the static interface and JSON API. No database
 
 `Identifiers` normalizes only known ID fields. Trace IDs are validated and lowercased; opaque request/correlation IDs retain their case. The join key includes the identifier type, so a request ID cannot match a trace ID merely because the strings happen to be equal.
 
-`Correlator` indexes log IDs by typed identifier. For each request it selects the first available match in this order: request ID, correlation ID, trace ID. A stronger match is not widened by merging logs from a broader trace or workflow. The order of logs in each result follows their original file order. Reused browser IDs are explicitly labeled as shared context. A matching ID establishes a relationship, not a diagnosis or causal proof. No timestamp proximity heuristic is used.
+`Correlator` indexes log IDs by typed identifier. For each request it selects the first match in this order: requestId, cfRay, correlationId, traceId, awsTraceId, azureRootId. A stronger match is not widened by merging broader context. Log references retain file order. Reused browser IDs are labeled as shared context. AWS uses Root, Cloudflare strips the datacenter suffix, and Azure hierarchical roots have their own namespace. Google/Sentry normalize compatible hexadecimal trace IDs. A matching ID establishes a relationship, not a diagnosis or causal proof.
+
+`LogParser.parseDetected` detects each entry independently and returns format counts with the normalized entries. Mixed sources retain physical line references; Java/Python stack continuations attach to the preceding entry. Docker JSON unwraps one envelope with bounded normalization. Unknown text stays visible without inferred IDs; malformed JSON is counted and skipped. Shared Java format shapes cannot reliably distinguish Logback from Log4j2, so they use one label.
+
+`CorrelationInsights` adds structured diagnostics when zero requests link. Its metadata contains known type labels and internal references only, so raw values cannot bypass redaction. Opt-in timestamp hints live in a separate collection in schema 1.3 and never mutate confirmed links or counts. Zoned timestamps only, ±2 seconds from request start, three nearest unlinked entries, and contradictory IDs excluded. Binary search over sorted log times bounds lookup; global and dense-window limits produce warnings. Hints reuse sanitized evidence in every export.
 
 ## Redaction
 

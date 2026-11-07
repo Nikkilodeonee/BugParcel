@@ -45,4 +45,22 @@ Review screenshot: [detected values](redaction-review.jpg).
 
 Screenshot: [ambiguity review](ambiguity-review.jpg).
 
+## Tier 1 correlation release (1.1.0)
+
+- **91 tests passed on Microsoft Java 17.0.20.1** using `mvn -o verify`: 35 Tier 1 correlation cases, 16 incident-service cases, 19 redaction-policy cases, 8 API integration cases, and 13 CLI cases.
+- Provider fixtures cover AWS Root vs Self, Cloudflare suffix changes and namespace separation, Google's unsigned decimal span bound, Azure exact IDs vs hierarchical root context, and Sentry/W3C interoperability. Invalid/zero values and stronger-ID precedence are covered.
+- Format fixtures cover Spring Boot, Logback/Log4j2 clock-only and full-date patterns, Python default/common patterns, quoted logfmt, Apache/nginx combined access, Docker-wrapped text/JSON, mixed sources, and Java/Python multiline stacks. Quoted message examples cannot invent logfmt ID fields.
+- Diagnostics distinguish missing HAR IDs, absent logs, missing log IDs, incompatible types, and different values. API tests verify detected formats and diagnostics reach exports.
+- Hints default off in API, Java constructors, UI, and CLI. Tests verify the ±2-second boundary, three-nearest limit, explicit-offset requirement, conflicting IDs, and unchanged confirmed/unlinked counts. All exports use redacted evidence.
+- Browser-imported [synthetic HAR](../src/test/resources/samples/correlation.har) and [mixed logs](../src/test/resources/samples/correlation.log). Confirmed 1 request, 4 log entries, 4 detected formats, both missing-ID diagnostics, and 0 confirmed links.
+- Enabling time hints displayed 100/200/300 ms guesses; the entry with only a local clock was excluded. The confirmed link count stayed 0 and the email remained redacted.
+- Checked all four setup-guide selections. Express **Copy snippet** displayed its success status. Snippets are generated into README from the same module used by the UI.
+- Downloaded HTML through the UI and inspected the actual downloaded file: unconfirmed labels and hint distances present, synthetic email absent. The CLI/API integration cases cover the other report formats.
+- Checked the 469 px narrow layout (no horizontal document overflow) and 1366 px desktop layout; reset the temporary viewport override. The file chooser was slow in automation but both imports completed successfully.
+- Windows launcher started the packaged 1.1.0 JAR on loopback successfully. Stopped the owned preview server after verification.
+
+Screenshots: [correlation workspace](tier-1-workspace.png), [narrow setup guide](tier-1-mobile.png).
+
+Time hints remain guesses. Custom logging patterns outside the documented shapes can remain unstructured. Example middleware has documented async/streaming integration limits; the Express/Django/nginx snippets were inspected against primary API references but were not deployed into separate framework applications here.
+
 Docker configuration and GitHub Actions are supplied but were not executed in this Windows session. No live user incident data or external service was used. Automatic redaction is still a bounded detector and should be reviewed before sharing real reports.

@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$jarPath = Join-Path $projectRoot 'target\bugparcel-1.0.0.jar'
+$jarPath = Join-Path $projectRoot 'target\bugparcel-1.1.0.jar'
 if (-not (Test-Path -LiteralPath $jarPath)) { throw 'Run mvn verify before packaging.' }
 $artifactRoot = Join-Path $projectRoot 'artifacts'
-$releaseRoot = Join-Path $artifactRoot 'BugParcel-1.0.0'
+$releaseRoot = Join-Path $artifactRoot 'BugParcel-1.1.0'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 Copy-Item -LiteralPath $jarPath -Destination (Join-Path $releaseRoot 'bugparcel.jar')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $releaseRoot
@@ -31,7 +31,7 @@ exec java -jar "$(dirname "$0")/bugparcel.jar" "$@"
 # LF line endings and no BOM so the script runs on macOS/Linux.
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'bugparcel'), ($cliSh -replace "`r`n", "`n") + "`n", (New-Object Text.UTF8Encoding $false))
 $instructions = @'
-BugParcel 1.0.0
+BugParcel 1.1.0
 
 Requires Java 17 or newer.
 
@@ -55,6 +55,6 @@ Author: Roman Sushkin (https://github.com/Nikkilodeonee)
 MIT License.
 '@
 Set-Content -LiteralPath (Join-Path $releaseRoot 'READ ME.txt') -Value $instructions -Encoding Ascii
-Compress-Archive -LiteralPath $releaseRoot -DestinationPath (Join-Path $artifactRoot 'BugParcel-1.0.0.zip') -Force
-Get-FileHash -LiteralPath (Join-Path $artifactRoot 'BugParcel-1.0.0.zip') -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLowerInvariant() + '  BugParcel-1.0.0.zip' } | Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding Ascii
-Write-Host (Join-Path $artifactRoot 'BugParcel-1.0.0.zip')
+Compress-Archive -LiteralPath $releaseRoot -DestinationPath (Join-Path $artifactRoot 'BugParcel-1.1.0.zip') -Force
+Get-FileHash -LiteralPath (Join-Path $artifactRoot 'BugParcel-1.1.0.zip') -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLowerInvariant() + '  BugParcel-1.1.0.zip' } | Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding Ascii
+Write-Host (Join-Path $artifactRoot 'BugParcel-1.1.0.zip')

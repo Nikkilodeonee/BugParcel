@@ -16,14 +16,19 @@ public final class Models {
         @Size(max=50) List<@Size(min=2, max=200) String> customValues,
         boolean includeBodies,
         @Size(max=20_000) Set<@Size(min=64,max=64) String> excludedFindingIds,
-        @Size(max=20_000) Set<@Size(min=64,max=64) String> redactFindingIds
+        @Size(max=20_000) Set<@Size(min=64,max=64) String> redactFindingIds,
+        boolean timestampHints
     ) {
         public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,boolean includeBodies) {
-            this(har,logs,title,enabledCategories,customValues,includeBodies,Set.of(),Set.of());
+            this(har,logs,title,enabledCategories,customValues,includeBodies,Set.of(),Set.of(),false);
         }
         public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
                              boolean includeBodies,Set<String> excludedFindingIds) {
-            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,Set.of());
+            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,Set.of(),false);
+        }
+        public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
+                             boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds) {
+            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,redactFindingIds,false);
         }
     }
     public record RequestEntry(String id, String method, String url, int status, String statusText,
@@ -36,9 +41,14 @@ public final class Models {
     public record FindingReview(String id, String value, List<String> categories, String replacement,
         int occurrences, int replacements, boolean redacted, boolean excluded, boolean fieldOnly, List<String> locations,
         boolean ambiguous, int ambiguousOccurrences, int ambiguousKeptOccurrences, List<String> ambiguityReasons, boolean forced) {}
+    public record LogFormat(String name, int entries) {}
+    public record CorrelationDiagnostic(String code, String message, String nextStep) {}
+    public record TimestampHint(String requestId, String logId, long distanceMs) {}
+    public record CorrelationReview(List<LogFormat> logFormats, List<CorrelationDiagnostic> diagnostics,
+        boolean timestampHintsEnabled, List<TimestampHint> timestampHints, int logsWithoutZonedTime) {}
     public record Incident(String schemaVersion, String title, String createdAt, List<RequestEntry> requests,
         List<LogEntry> logs, List<String> warnings, List<RedactionCount> redactions, boolean includesBodies,
-        int excludedValues, int ambiguousValuesKept, int forcedValues) {}
+        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation) {}
     public record Analysis(Incident incident, int failedRequests, int matchedRequests, int unmatchedLogs,
         int redactedOccurrences, List<FindingReview> findings) {}
 }

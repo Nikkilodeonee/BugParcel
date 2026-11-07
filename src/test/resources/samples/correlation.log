@@ -1,0 +1,4 @@
+2026-11-07T14:32:08.100Z ERROR 33 --- [main] dev.shop.CheckoutService : Payment failed for person@example.test
+time=2026-11-07T14:32:08.200Z level=error logger=payments msg="Gateway rejected payment" retry=false
+{"log":"ERROR:checkout:Payment requires review\n","stream":"stderr","time":"2026-11-07T14:32:08.300Z"}
+14:32:08.400 [main] INFO dev.shop.CheckoutService - Local clock has no date or zone

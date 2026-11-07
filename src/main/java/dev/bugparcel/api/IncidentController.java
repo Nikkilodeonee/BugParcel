@@ -16,7 +16,7 @@ import java.util.Map;
 public class IncidentController {
     private final IncidentService service; private final ReportExporter exporter;
     public IncidentController(IncidentService service,ReportExporter exporter) {this.service=service;this.exporter=exporter;}
-    @GetMapping("/health") public Map<String,String> health() {return Map.of("status","ok","version","1.0.0");}
+    @GetMapping("/health") public Map<String,String> health() {return Map.of("status","ok","version","1.1.0");}
     @GetMapping("/sample") public Map<String,String> sample() throws IOException {
         return Map.of("har",read("checkout.har"),"logs",read("checkout.ndjson"),"title","Checkout fails after payment confirmation");
     }

@@ -1,18 +1,20 @@
+import { requestIdGuides } from './request-id-guides.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
-const state = {har:'', logs:'', title:'Untitled incident', files:{har:null,logs:null}, sample:false, analysis:null, tab:'requests', filter:'all', logFilter:'all', search:'', logSearch:'', selected:null, detailTab:'evidence', enabled:new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']), custom:[], exclusions:new Set(), forced:new Set(), reviewSearch:'', reviewPage:0, includeBodies:false, busy:false};
+const state = {har:'', logs:'', title:'Untitled incident', files:{har:null,logs:null}, sample:false, analysis:null, tab:'requests', filter:'all', logFilter:'all', search:'', logSearch:'', selected:null, detailTab:'evidence', enabled:new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']), custom:[], exclusions:new Set(), forced:new Set(), reviewSearch:'', reviewPage:0, includeBodies:false, timestampHints:false, busy:false};
 const matchLabels = {'request-id':'Request ID match','shared-request':'Shared request ID context','trace-id':'Trace ID match','shared-trace':'Shared trace context','correlation-id':'Correlation ID match','shared-correlation':'Shared correlation context',unmatched:'No shared identifier'};
+Object.assign(matchLabels, {'cf-ray':'Cloudflare Ray ID match','shared-ray':'Shared Cloudflare Ray context','aws-trace-id':'AWS trace match','shared-aws-trace':'Shared AWS trace context','azure-root-id':'Azure root context','shared-azure-root':'Shared Azure root context'});
 let pending, revision = 0, toastTimer;
 
-function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:[...state.enabled],customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced]}; }
+function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:[...state.enabled],customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced],timestampHints:state.timestampHints}; }
 function message(text='') { $('#feedback').textContent=text; $('#feedback').hidden=!text; }
 function toast(text) { clearTimeout(toastTimer); $('#toast').textContent=text; $('#toast').hidden=false; toastTimer=setTimeout(()=>$('#toast').hidden=true,4500); }
 function setBusy(busy) {state.busy=busy;$('#busy-line').hidden=!busy;$('#export-button').disabled=busy||!state.analysis;$('#reset-review').disabled=busy||(state.exclusions.size===0&&state.forced.size===0);$$('[data-action="sample"]').forEach(b=>b.disabled=busy);}
 function fileSize(bytes) { return bytes<1024?`${bytes} B`:`${(bytes/1024).toFixed(1)} KB`; }
 function failure(r) {return r.status===0||r.status>=400;}
-function time(value) {if(!value)return 'No timestamp';const date=new Date(value);return Number.isNaN(date.valueOf())?value:date.toISOString().substring(11,23)+' UTC';}
+function time(value) {if(!value)return 'No timestamp';if(!/\d{4}-\d{2}-\d{2}[T ].*(Z|[+-]\d{2}:?\d{2})$/i.test(value))return value+' (zone/date unspecified)';const date=new Date(value.replace(',', '.'));return Number.isNaN(date.valueOf())?value:date.toISOString().substring(11,23)+' UTC';}
 function duration(ms) {return ms>=1000?`${(ms/1000).toFixed(2)} s`:`${Math.round(ms)} ms`;}
 function urlParts(value) {try {const url=new URL(value);return {path:url.pathname+url.search+url.hash,host:url.host};}catch{return {path:value,host:''};}}
 function method(r) {const type=['POST','PUT','PATCH','DELETE'].includes(r.method)?r.method.toLowerCase():'';return `<span class="method ${type}">${escape(r.method)}</span>`;}
@@ -24,7 +26,7 @@ function updateFiles() {
   for(const key of ['har','logs']) {
     const file=state.files[key];$(`#${key}-drop`).classList.toggle('loaded',!!file);
     $(`#${key}-name`).textContent=file?file.name:key==='har'?'Browser recording':'Server logs';
-    $(`#${key}-hint`).textContent=file?`${fileSize(file.size)} · ${state.sample?'Synthetic sample':'In memory'} · Click to replace`:key==='har'?'Drop a .har file or browse files':'Drop JSON or Spring Boot text logs';
+    $(`#${key}-hint`).textContent=file?`${fileSize(file.size)} · ${state.sample?'Synthetic sample':'In memory'} · Click to replace`:key==='har'?'Drop a .har file or browse files':'Drop JSON, text, logfmt, access or Docker logs';
     $(`#${key}-status`).innerHTML=icon(file?'check':'plus');
   }
   $('#sample-badge').hidden=!state.sample;$('#clear-button').hidden=!state.har&&!state.logs;
@@ -74,11 +76,12 @@ async function importFile(key,file) {
   }catch(error){message(error.message);}finally{$(`#${key}-file`).value='';}
 }
 function clearSession(notify=true) {
+  state.timestampHints=false;$('#timestamp-hints').checked=false;
   pending?.abort();revision++;state.har='';state.logs='';state.title='Untitled incident';state.files={har:null,logs:null};state.sample=false;state.analysis=null;state.selected=null;state.custom=[];state.exclusions.clear();state.forced.clear();state.reviewSearch='';state.reviewPage=0;state.enabled=new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']);state.includeBodies=false;state.filter='all';state.logFilter='all';state.tab='requests';state.detailTab='evidence';state.search='';state.logSearch='';
   $('#request-search').value='';$('#log-search').value='';$('#har-file').value='';$('#logs-file').value='';
   $('#incident-title').value='Untitled incident';$('#custom-value').value='';$('#include-bodies').checked=false;
   $('#review-search').value='';
-  for(const id of ['stats','request-rows','request-detail','log-list','redaction-options','custom-chips','notes-list','export-summary','review-rows'])$(`#${id}`).replaceChildren();
+  for(const id of ['stats','request-rows','request-detail','log-list','redaction-options','custom-chips','notes-list','export-summary','review-rows','correlation-diagnostics','detected-formats'])$(`#${id}`).replaceChildren();
   $('#export-status').textContent='';setBusy(false);message();render();if(notify)toast('Session cleared. Your original files are untouched.');
 }
 function render() {
@@ -96,9 +99,31 @@ function render() {
     ['values redacted',result.redactedOccurrences,'Consistent across the evidence','']
   ].map(([label,value,note,color])=>`<div class="stat ${color}" title="${escape(note)}"><b>${value}</b><span>${label}</span></div>`).join('');
   $('#requests-count').textContent=incident.requests.length;$('#logs-count').textContent=incident.logs.length;$('#redactions-count').textContent=result.redactedOccurrences;
-  renderTabs();renderRequests();renderLogs();renderRedactions();
+  renderCorrelation();renderTabs();renderRequests();renderLogs();renderRedactions();
   $('#notes-label').textContent=`Analysis notes${incident.warnings.length?` · ${incident.warnings.length}`:''}`;
   $('#notes-list').innerHTML=incident.warnings.length?incident.warnings.map(w=>`<li>${escape(w)}</li>`).join(''):'<li>No additional format or correlation warnings.</li>';
+}
+function renderCorrelation() {
+  const review=state.analysis.incident.correlation;
+  const panel=$('#correlation-diagnostics');
+  panel.hidden=!review.diagnostics.length;
+  const formatNames=review.logFormats.map(f=>f.name).join(' ');
+  const guide=formatNames.includes('Python')?'django':formatNames.includes('access')?'nginx':'spring';
+  panel.innerHTML=review.diagnostics.length?`<div class="diagnostic-heading"><h2 id="diagnostics-title">No requests linked</h2><button class="button button-secondary" data-action="add-ids" data-guide="${guide}">Add request IDs ${icon('arrow')}</button></div>${review.diagnostics.map(d=>`<div class="diagnostic-reason"><strong>${escape(d.message)}</strong><p>${escape(d.nextStep)}</p></div>`).join('')}`:'';
+  $('#detected-formats').textContent=review.logFormats.length?`Detected ${review.logFormats.length>1?'mixed formats':'format'}: ${review.logFormats.map(f=>`${f.name} · ${f.entries}`).join(' / ')}`:'No server logs imported';
+  $('#timestamp-hints').checked=review.timestampHintsEnabled;
+}
+function renderGuide() {
+  const guide=requestIdGuides.find(g=>g.id===$('#guide-stack').value)||requestIdGuides[0];
+  $('#guide-snippet-note').textContent=guide.note;
+  $('#guide-snippet').textContent=guide.code;
+  $('#guide-source').href=guide.source;
+  $('#guide-copy-status').textContent='';
+}
+function showGuide(id) {
+  if(id)$('#guide-stack').value=id;
+  renderGuide();$('#guide-dialog').showModal();
+  if(id)$('#add-ids-title').scrollIntoView({block:'start'});
 }
 function renderTabs() {
   $$('[data-tab]').forEach(button=>{const selected=button.dataset.tab===state.tab;button.classList.toggle('active',selected);button.setAttribute('aria-selected',selected);button.tabIndex=selected?0:-1;$(`#panel-${button.dataset.tab}`).hidden=!selected;});
@@ -129,6 +154,11 @@ function renderDetail(request) {
     if(Object.values(r.correlationIds).some(value=>value.includes('[REDACTED_')))content+='<p class="detail-note">Displayed IDs are redacted. These links were matched using the original IDs before redaction.</p>';
     if(kind.startsWith('shared'))content+='<p class="detail-note">This identifier is shared by multiple requests. These logs describe shared context, not an exclusive match.</p>';
     content+=logs.length?`<h3 class="mini-heading">Linked server logs</h3>${logs.map(renderLogCard).join('')}`:`<div class="empty-evidence">${icon('link')}${state.logs?'No log entries share a supported identifier with this request.':'Add server logs to connect the other side of this request.'}<br><span class="detail-note">Time alone is not treated as proof.</span></div>`;
+    const review=state.analysis.incident.correlation;
+    if(review.timestampHintsEnabled&&!logs.length) {
+      const hints=review.timestampHints.filter(h=>h.requestId===r.id);
+      content+=`<section class="time-hints"><h3>Time hints · unconfirmed</h3><p>Guesses from unlinked logs within ±2 seconds of request start. Clocks can differ. These entries remain unlinked.</p>${hints.length?hints.map(h=>{const log=state.analysis.incident.logs.find(l=>l.id===h.logId);return log?`<div class="hint-distance">${h.distanceMs} ms from request start · guess</div>${renderLogCard(log)}`:'';}).join(''):'<p>No eligible entries in this time window. Hints require a complete date and explicit UTC offset; conflicting IDs are excluded.</p>'}</section>`;
+    }
   }else if(state.detailTab==='headers')content=`<h3 class="mini-heading">Request headers</h3>${headerTable(r.requestHeaders)}<h3 class="mini-heading">Response headers</h3>${headerTable(r.responseHeaders)}`;
   else content=state.includeBodies?`<h3 class="mini-heading">Request body</h3>${r.requestBody?`<pre class="body-code">${replacements(r.requestBody)}</pre>`:'<p class="detail-note">No text request body recorded.</p>'}<h3 class="mini-heading">Response body</h3>${r.responseBody?`<pre class="body-code">${replacements(r.responseBody)}</pre>`:'<p class="detail-note">No supported text response body recorded.</p>'}`:`<div class="empty-evidence">${icon('shield')}Bodies are excluded from this report.<br><button class="text-button" data-action="redactions">Manage in Redactions ${icon('arrow')}</button></div>`;
   panel.innerHTML=`<div class="detail-header"><div class="detail-eyebrow">Request details<span>${escape(r.id)}</span></div><div class="detail-path">${method(r)}${escape(parts.path)}</div><div class="detail-meta">${status(r)}<span>${escape(r.statusText)}</span><span>·</span><span>${duration(r.durationMs)}</span><span>·</span><span>${escape(time(r.timestamp))}</span></div></div><div class="detail-nav" aria-label="Request detail view">${[['evidence','Evidence'],['headers','Headers'],['bodies','Bodies']].map(([key,label])=>`<button class="${state.detailTab===key?'active':''}" data-detail="${key}" aria-pressed="${state.detailTab===key}">${label}</button>`).join('')}</div><div class="detail-content">${content}</div>`;
@@ -195,7 +225,12 @@ async function sampleFiles() {
 document.addEventListener('click',async event=>{
   const action=event.target.closest('[data-action]')?.dataset.action;
   if(action==='sample')await loadSample();
-  else if(action==='guide')$('#guide-dialog').showModal();
+  else if(action==='guide')showGuide();
+  else if(action==='add-ids')showGuide(event.target.closest('[data-guide]').dataset.guide);
+  else if(action==='copy-guide'){
+    try{await navigator.clipboard.writeText($('#guide-snippet').textContent);$('#guide-copy-status').textContent='Snippet copied.';}
+    catch{$('#guide-copy-status').textContent='Clipboard access was unavailable. Select and copy the code below.';}
+  }
   else if(action==='sample-files')await sampleFiles();
   else if(action==='clear')clearSession();
   else if(action==='export')showExport();
@@ -218,6 +253,9 @@ $('#request-search').addEventListener('input',event=>{state.search=event.target.
 $('#log-search').addEventListener('input',event=>{state.logSearch=event.target.value;renderLogs();});
 $('#incident-title').addEventListener('change',async event=>{state.title=event.target.value.trim()||'Untitled incident';await analyze();});
 $('#include-bodies').addEventListener('change',async event=>{state.includeBodies=event.target.checked;await analyze();});
+$('#timestamp-hints').addEventListener('change',async event=>{state.timestampHints=event.target.checked;await analyze();});
+$('#guide-stack').innerHTML=requestIdGuides.map(g=>`<option value="${g.id}">${escape(g.name)}</option>`).join('');
+$('#guide-stack').addEventListener('change',renderGuide);
 $('#redaction-options').addEventListener('change',async event=>{if(!event.target.dataset.category)return;const category=event.target.dataset.category;event.target.checked?state.enabled.add(category):state.enabled.delete(category);await analyze();});
 $('#review-rows').addEventListener('change',async event=>{
   const id=event.target.dataset.finding;

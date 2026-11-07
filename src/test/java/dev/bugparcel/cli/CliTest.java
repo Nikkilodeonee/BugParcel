@@ -56,6 +56,24 @@ class CliTest {
         assertThat(result.err()).contains("6 requests | 2 failed | 5 linked | 9 logs | 2 unlinked logs",
             "not a guarantee", "bugparcel review");
     }
+    @Test
+    void timestampHintsAreOptInAndKeepConfirmedCountsSeparate() throws Exception {
+        for (String name : List.of("correlation.har", "correlation.log")) {
+            try (var stream = getClass().getResourceAsStream("/samples/" + name)) {
+                Files.write(temp.resolve(name), stream.readAllBytes());
+            }
+        }
+        var off = run("report", "correlation.har", "--logs", "correlation.log", "--format", "json", "-o", "-");
+        assertThat(off.code()).isZero();
+        assertThat(mapper.readTree(off.out()).path("correlation").path("timestampHintsEnabled").asBoolean()).isFalse();
+        var on = run("report", "correlation.har", "--logs", "correlation.log", "--timestamp-hints", "--format", "json", "-o", "-");
+        assertThat(on.code()).isZero();
+        var incident = mapper.readTree(on.out());
+        assertThat(incident.path("correlation").path("timestampHints")).hasSize(3);
+        assertThat(incident.path("requests").get(0).path("logIds")).isEmpty();
+        assertThat(on.err()).contains("0 linked", "4 unlinked logs", "Detected log formats", "no usable supported request", "unconfirmed guesses");
+        assertThat(on.out()).doesNotContain("person@example.test");
+    }
 
     @Test
     void formatIsInferredFromTheOutputExtensionAndCanBeOverridden() throws Exception {

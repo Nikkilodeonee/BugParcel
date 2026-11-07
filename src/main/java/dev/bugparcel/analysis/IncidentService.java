@@ -17,8 +17,10 @@ public class IncidentService {
         if(input.har().length()>12_000_000 || (input.logs()!=null && input.logs().length()>12_000_000)) throw new IllegalArgumentException("Each input must be smaller than 12 MB of text.");
         List<String> warnings=new ArrayList<>();
         var requests=harParser.parse(input.har(),input.includeBodies(),warnings);
-        var logs=logParser.parse(input.logs(),warnings);
+        var parsedLogs=logParser.parseDetected(input.logs(),warnings);
+        var logs=parsedLogs.entries();
         requests=correlator.correlate(requests,logs,warnings);
+        var correlation=CorrelationInsights.review(requests,logs,parsedLogs.formats(),input.timestampHints(),warnings);
         Set<String> linked=new HashSet<>(); requests.forEach(r->linked.addAll(r.logIds()));
         String title=input.title()==null || input.title().isBlank()?"Untitled incident":input.title().strip();
         Redactor redactor=new Redactor(mapper,input.enabledCategories(),input.customValues(),input.excludedFindingIds(),input.redactFindingIds());
@@ -34,7 +36,7 @@ public class IncidentService {
         int ambiguousKept=(int)findings.stream().filter(f->f.ambiguousKeptOccurrences()>0).count();
         int forced=(int)findings.stream().filter(FindingReview::forced).count();
         if(ambiguousKept>0) warnings.add(ambiguousKept+" address values have ambiguous occurrences kept by automatic rules. Inspect them in Redactions and choose Redact all occurrences if they are addresses.");
-        var incident=new Incident("1.2",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced);
+        var incident=new Incident("1.3",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced,correlation);
         return new Analysis(incident,(int)requests.stream().filter(r->r.status()==0 || r.status()>=400).count(),
             (int)requests.stream().filter(r->!r.logIds().isEmpty()).count(),(int)logs.stream().filter(l->!linked.contains(l.id())).count(),
             redactor.totalRedactions(),findings);

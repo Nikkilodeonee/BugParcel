@@ -20,6 +20,10 @@ public class ReportExporter {
         if(incident.forcedValues()>0) html.append("<li>").append(incident.forcedValues()).append(" values have an explicit Redact all occurrences decision, subject to enabled categories.</li>");
         html.append("</ul></div>");
         for(String warning:incident.warnings()) html.append("<p class=\"warning\">").append(escape(warning)).append("</p>");
+        html.append("<h2>Correlation review</h2><div class=\"box\">");
+        html.append("<p>Detected log formats: ").append(escape(formatSummary(incident))).append("</p>");
+        for(var diagnostic:incident.correlation().diagnostics()) html.append("<p><b>").append(escape(diagnostic.message())).append("</b><br>").append(escape(diagnostic.nextStep())).append("</p>");
+        html.append("<p>Time hints: ").append(incident.correlation().timestampHintsEnabled()?"enabled · unconfirmed guesses":"off").append(". Confirmed links require shared IDs.</p></div>");
         Map<String,LogEntry> logs=incident.logs().stream().collect(Collectors.toMap(LogEntry::id,l->l));
         Set<String> linked=new HashSet<>();
         html.append("<h2>Browser requests & linked evidence</h2>");
@@ -31,6 +35,12 @@ public class ReportExporter {
             html.append("<h3>Linked server logs (references, not a root-cause diagnosis)</h3>");
             if(r.logIds().isEmpty()) html.append("<p class=\"muted\">Unmatched. No shared identifiers found.</p>");
             for(String id:r.logIds()) { linked.add(id); if(logs.containsKey(id)) html.append(log(logs.get(id))); }
+            if(incident.correlation().timestampHintsEnabled() && r.logIds().isEmpty()) {
+                html.append("<h3>Time hints · unconfirmed guesses</h3><p class=\"muted\">Within ±2 seconds of request start; up to three unlinked entries. Clock skew can mislead. These are not confirmed links.</p>");
+                var hints=incident.correlation().timestampHints().stream().filter(h->h.requestId().equals(r.id())).toList();
+                if(hints.isEmpty()) html.append("<p class=\"muted\">No eligible entries in this time window.</p>");
+                for(var hint:hints) if(logs.containsKey(hint.logId())) html.append("<p class=\"muted\">Guess · ").append(hint.distanceMs()).append(" ms from request start</p>").append(log(logs.get(hint.logId())));
+            }
             html.append("</details>");
         }
         html.append("<h2>Unlinked server logs</h2>");
@@ -45,6 +55,8 @@ public class ReportExporter {
         if(incident.excludedValues()>0) out.append("- ").append(incident.excludedValues()).append(" detected values kept by individual review choices. Overlapping rules can still cover them.\n");
         if(incident.forcedValues()>0) out.append("- ").append(incident.forcedValues()).append(" values have an explicit Redact all occurrences decision, subject to enabled categories.\n");
         for(String warning:incident.warnings()) out.append("\n> ").append(md(warning)).append("\n");
+        out.append("\n## Correlation review\n\nDetected log formats: ").append(md(formatSummary(incident))).append(".\n\nTime hints: ").append(incident.correlation().timestampHintsEnabled()?"enabled (unconfirmed guesses)":"off").append(". Confirmed links require shared IDs.\n\n");
+        for(var diagnostic:incident.correlation().diagnostics()) out.append("- ").append(md(diagnostic.message())).append(" ").append(md(diagnostic.nextStep())).append("\n");
         Map<String,LogEntry> logs=incident.logs().stream().collect(Collectors.toMap(LogEntry::id,l->l)); Set<String> linked=new HashSet<>();
         for(var r:incident.requests()) {
             out.append("\n## ").append(r.status()).append(" ").append(md(r.method())).append(" ").append(md(r.url())).append("\n\n").append(md(r.timestamp())).append(" · ").append(r.durationMs()).append(" ms · ").append(md(r.matchKind())).append("\n\n");
@@ -52,10 +64,17 @@ public class ReportExporter {
             if(!r.requestBody().isBlank()) out.append("\nRequest body:\n\n").append(code(r.requestBody()));
             if(!r.responseBody().isBlank()) out.append("\nResponse body:\n\n").append(code(r.responseBody()));
             for(String id:r.logIds()) {linked.add(id); if(logs.containsKey(id)) out.append("\n").append(code(logText(logs.get(id))));}
+            if(incident.correlation().timestampHintsEnabled() && r.logIds().isEmpty()) {
+                out.append("\n### Time hints · unconfirmed guesses\n\nUp to three unlinked entries within ±2 seconds of request start. These are not confirmed links.\n\n");
+                var hints=incident.correlation().timestampHints().stream().filter(h->h.requestId().equals(r.id())).toList();
+                if(hints.isEmpty()) out.append("No eligible entries in this time window.\n\n");
+                for(var hint:hints) if(logs.containsKey(hint.logId())) out.append("Guess · ").append(hint.distanceMs()).append(" ms from request start.\n\n").append(code(logText(logs.get(hint.logId()))));
+            }
         }
         out.append("\n## Unlinked logs\n\n"); for(var l:incident.logs()) if(!linked.contains(l.id())) out.append(code(logText(l))).append("\n");
         return out.toString();
     }
+    private String formatSummary(Incident incident) {return incident.correlation().logFormats().isEmpty()?"none":incident.correlation().logFormats().stream().map(f->f.name()+" ("+f.entries()+")").collect(Collectors.joining(", "));}
     private String md(String value) {return value.replace("\\","\\\\").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("`","\\`").replace("[","\\[").replace("]","\\]").replace("*","\\*").replace("_","\\_").replace("\r"," ").replace("\n"," ");}
     private String code(String value) { int fence=3; while(value.contains("`".repeat(fence))) fence++; String mark="`".repeat(fence);return mark+"text\n"+value+"\n"+mark+"\n"; }
     private String logText(LogEntry l) { return l.timestamp()+" "+l.level()+" "+l.logger()+"\n"+l.message()+(l.stackTrace().isBlank()?"":"\n"+l.stackTrace()); }

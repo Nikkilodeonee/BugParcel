@@ -19,11 +19,11 @@ jobs:
       - run: mvn -B verify
       - name: Command-line smoke test
         run: |
-          java -jar target/bugparcel-1.0.0.jar sample --dir "$RUNNER_TEMP/sample"
-          java -jar target/bugparcel-1.0.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
+          java -jar target/bugparcel-1.1.0.jar sample --dir "$RUNNER_TEMP/sample"
+          java -jar target/bugparcel-1.1.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
           test -s "$RUNNER_TEMP/report.html"
       - uses: actions/upload-artifact@v4
         with:
           name: bugparcel-jar
-          path: target/bugparcel-1.0.0.jar
+          path: target/bugparcel-1.1.0.jar
           retention-days: 14

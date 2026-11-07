@@ -41,7 +41,7 @@ import java.util.Set;
  * can be piped.
  */
 public final class Cli {
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.1.0";
     public static final int OK = 0;
     public static final int FAILURE = 1;
     public static final int USAGE = 2;
@@ -56,9 +56,9 @@ public final class Cli {
 
     private static final Set<String> REPORT_OPTIONS = Set.of(
         "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force",
-        "include-bodies", "strict", "quiet", "help");
+        "include-bodies", "timestamp-hints", "strict", "quiet", "help");
     private static final Set<String> REVIEW_OPTIONS = Set.of(
-        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "reveal", "json", "help");
+        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "reveal", "json", "help");
     private static final Set<String> SAMPLE_OPTIONS = Set.of("dir", "overwrite", "help");
 
     private final InputStream stdin;
@@ -457,7 +457,7 @@ public final class Cli {
             Path name = Paths.get(harPath).getFileName();
             title = name == null ? null : "Incident: " + name;
         }
-        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force);
+        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"));
     }
 
     /** Applies --keep/--force. IDs are resolved against a first pass so short prefixes work. */
@@ -474,7 +474,7 @@ public final class Cli {
             }
         }
         return service.analyze(new AnalysisInput(base.har(), base.logs(), base.title(), base.enabledCategories(),
-            base.customValues(), base.includeBodies(), keep, force));
+            base.customValues(), base.includeBodies(), keep, force, base.timestampHints()));
     }
 
     private static Set<String> resolveIds(List<String> prefixes, List<FindingReview> findings, String option) {
@@ -582,6 +582,8 @@ public final class Cli {
             }
         }
         err.println(analysis.redactedOccurrences() + " values redacted" + (parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")"));
+        if (!incident.correlation().logFormats().isEmpty()) err.println("Detected log formats: " + incident.correlation().logFormats());
+        for (var diagnostic : incident.correlation().diagnostics()) err.println("correlation: " + diagnostic.message() + " " + diagnostic.nextStep());
         for (RedactionCount count : incident.redactions()) {
             if (!count.enabled() && count.occurrences() > 0) {
                 err.println("note: " + count.label() + " redaction is off; " + count.occurrences() + " occurrence(s) remain visible.");
@@ -602,9 +604,10 @@ public final class Cli {
                 Input
                   <file.har>, --har <file>     HAR recording (use - for standard input)
                   --logs <file>                Server logs; repeat for several files, - for standard input.
-                                               JSON array, NDJSON, and Spring Boot text logs can be mixed.
+                                               JSON, Spring/Java/Python text, logfmt, access, or Docker JSON.
                   --title <text>               Report title (default: "Incident: <har file name>")
                   --include-bodies             Include request/response bodies (redacted, truncated)
+                  --timestamp-hints            Show unconfirmed time guesses (off by default; never ID links)
 
                 Output
                   -o, --out <file>             Report path, or - for standard output (default: bugparcel-report.<ext>)
@@ -629,7 +632,8 @@ public final class Cli {
                   --reveal                     Show original values (they are hidden by default)
                   --json                       Machine-readable output
                   --keep <id> / --force <id>   Preview a decision
-                  --include-bodies             Inspect request/response bodies too""");
+                  --include-bodies             Inspect request/response bodies too
+                  --timestamp-hints            Unconfirmed time guesses, separate from ID links""");
         } else if ("sample".equals(topic)) {
             out.println("""
                 Usage: bugparcel sample [--dir <folder>] [--overwrite]

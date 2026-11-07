@@ -1,0 +1,19 @@
+.correlation-diagnostics{border:1px solid var(--warn-line);background:var(--warn-bg);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px}
+.diagnostic-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.diagnostic-heading h2{font-size:17px;margin:0}
+.diagnostic-reason{margin-top:14px;font-size:13.5px;line-height:1.6;overflow-wrap:anywhere}
+.diagnostic-reason strong{font-weight:600}.diagnostic-reason p{margin:3px 0;color:var(--text-2)}
+.correlation-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:0 0 18px}
+.detected-formats{font:12px/1.6 var(--mono);color:var(--text-2);overflow-wrap:anywhere}
+.hint-control{display:flex;gap:9px;align-items:center;font-size:13px;flex-shrink:0;cursor:pointer}
+.hint-control input{width:16px;height:16px;accent-color:var(--accent)}.hint-control small{display:block;color:var(--text-3);font-size:11px;margin-top:2px}
+.time-hints{border:1px dashed var(--line-strong);background:var(--surface-2);border-radius:var(--radius);padding:14px;margin-top:20px}
+.time-hints h3{font-size:14px;margin:0 0 8px}.time-hints p{font-size:12.5px;color:var(--text-2);line-height:1.6;margin:0 0 14px}
+.hint-distance{font:11px/1.6 var(--mono);color:var(--text-2);margin:14px 0 4px}
+.request-id-guide{border-top:1px solid var(--line);padding-top:18px;margin-top:24px}
+.request-id-guide h3{font-size:18px;margin:0 0 10px}.request-id-guide p{font-size:13px;color:var(--text-2);line-height:1.65}
+.request-id-guide label{font-size:13px;font-weight:600;margin-right:10px}.request-id-guide select{padding:8px 32px 8px 12px;border:1px solid var(--line-strong);border-radius:5px;background:var(--surface);color:var(--text)}
+.snippet-actions{display:flex;gap:12px;justify-content:space-between;align-items:center;font-size:12px}.snippet-actions a{color:var(--accent)}
+.guide-code{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:14px;font:11px/1.7 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;tab-size:2}
+#guide-copy-status{min-height:1.5em;color:var(--accent)}
+@media(max-width:700px){.correlation-toolbar{align-items:flex-start;flex-direction:column}.correlation-diagnostics{padding:14px}.snippet-actions{flex-wrap:wrap}}

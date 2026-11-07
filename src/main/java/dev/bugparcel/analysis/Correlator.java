@@ -14,12 +14,19 @@ public class Correlator {
         List<RequestEntry> result=new ArrayList<>();
         for(var r:requests) {
             LinkedHashSet<String> matches=new LinkedHashSet<>(); String kind="unmatched";
-            for(String key:List.of("requestId","correlationId","traceId")) {
+            for(String key:List.of("requestId","cfRay","correlationId","traceId","awsTraceId","azureRootId")) {
                 String value=r.correlationIds().get(key); if(value==null) continue;
                 matches.addAll(index.getOrDefault(key+"\u0000"+value,List.of()));
                 if(!matches.isEmpty()) {
                     boolean shared=counts.getOrDefault(key+"\u0000"+value,0L)>1;
-                    kind=switch(key) {case "requestId"->shared?"shared-request":"request-id";case "correlationId"->shared?"shared-correlation":"correlation-id";default->shared?"shared-trace":"trace-id";};
+                    kind=switch(key) {
+                        case "requestId"->shared?"shared-request":"request-id";
+                        case "cfRay"->shared?"shared-ray":"cf-ray";
+                        case "correlationId"->shared?"shared-correlation":"correlation-id";
+                        case "awsTraceId"->shared?"shared-aws-trace":"aws-trace-id";
+                        case "azureRootId"->shared?"shared-azure-root":"azure-root-id";
+                        default->shared?"shared-trace":"trace-id";
+                    };
                     break;
                 }
             }

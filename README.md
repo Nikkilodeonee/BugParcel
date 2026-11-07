@@ -14,7 +14,7 @@ Requires **Java 17+** to run the packaged app. Building from source also require
 
 ```sh
 mvn verify
-java -jar target/bugparcel-1.0.0.jar
+java -jar target/bugparcel-1.1.0.jar
 ```
 
 Open **http://127.0.0.1:8087** and click **Open the sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
@@ -36,9 +36,9 @@ After a successful build, create a portable ZIP with `scripts/package.ps1`. It c
 The same JAR is also a CLI. Commands never start a server or open a port, and the report starts in well under a second.
 
 ```sh
-java -jar target/bugparcel-1.0.0.jar sample                      # writes ./bugparcel-sample/
-java -jar target/bugparcel-1.0.0.jar report checkout.har --logs app.log -o report.html
-java -jar target/bugparcel-1.0.0.jar review checkout.har --logs app.log
+java -jar target/bugparcel-1.1.0.jar sample                      # writes ./bugparcel-sample/
+java -jar target/bugparcel-1.1.0.jar report checkout.har --logs app.log -o report.html
+java -jar target/bugparcel-1.1.0.jar review checkout.har --logs app.log
 ```
 
 The portable ZIP adds `bugparcel.cmd` and `bugparcel` launchers, so these become `bugparcel report ...`.
@@ -80,10 +80,10 @@ Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked l
 
 ## What works
 
-- Import HAR recordings, newline-delimited JSON logs, JSON log arrays, and Spring Boot text logs with multiline stack traces.
+- Import HAR recordings and automatically detect JSON, Spring Boot, Logback/Log4j2, Python, logfmt, Apache/nginx access, and Docker JSON logs, including mixed files and multiline stacks.
 - Inspect HTTP status, duration, headers, optional text bodies, correlation IDs, and linked logs.
 - Filter failed or unlinked requests; search requests and logs; jump from a log entry to its request.
-- Match request IDs first, correlation IDs second, and trace IDs third. Repeated IDs are labeled as shared context. No matches are inferred from timestamps.
+- Match typed request/edge IDs before broader correlation/trace IDs. Repeated IDs are labeled as shared context. Optional time hints are unconfirmed guesses and never become ID links.
 - Replace credentials, cookies, known sensitive fields, email addresses, IPv4/IPv6 literals, and explicitly labeled phone numbers with consistent placeholders.
 - Add exact custom values for customer names, internal hostnames, or other data that automatic detection does not cover.
 - Turn redaction categories on or off and preview the resulting evidence. Bodies are excluded by default.
@@ -108,10 +108,209 @@ Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked l
 | `x-request-id`, `request-id` | `requestId`, `request_id`, `request.id`, nested `request.id` |
 | `x-correlation-id`, `correlation-id` | `correlationId`, `correlation_id`, `correlation.id` |
 | W3C `traceparent`, `x-b3-traceid`, B3 single header | `traceId`, `trace_id`, `trace.id`, nested `trace.id`, `traceparent` |
+| AWS `X-Amzn-Trace-Id` | `X-Amzn-Trace-Id` (Root field), `awsTraceId`, `aws_trace_id`, AWS-shaped `traceId` |
+| Cloudflare `cf-ray` | `cf-ray`, `cf_ray`, `cfRay` |
+| Google `X-Cloud-Trace-Context` | `traceId` / `trace_id`, `X-Cloud-Trace-Context`, `logging.googleapis.com/trace` |
+| Azure `Request-Id` | Exact `requestId` / `Request-Id`, or hierarchical root in `operation_Id`, `operation.id`, `azureRootId` |
+| Sentry `sentry-trace` | `sentry-trace`, `traceId` / `trace_id`, compatible W3C `traceparent` |
 
-Headers can come from the request or response. JSON fields are recognized at the top level and in `mdc`, `context`, and `labels`. Trace IDs must be 16 or 32 hexadecimal characters and cannot be all zeros. W3C version-00 traceparents require the standard length and a nonzero parent ID.
+Headers can come from the request or response. JSON fields are recognized at the top level and in `mdc`, `context`, `labels`, and `headers`. Trace IDs must be 16 or 32 hexadecimal characters and cannot be all zeros. W3C version-00 traceparents require the standard length and a nonzero parent ID. Google decimal span IDs must fit an unsigned 64-bit integer; Sentry span IDs must be nonzero.
 
-Plain text logs recognize `requestId=...`, `request_id=...`, `traceId=...`, `trace_id=...`, `correlationId=...`, `correlation_id=...`, and `traceparent=...` after a timestamp and level.
+AWS joins use the validated Root value, never Self. Cloudflare joins use the 16-hex Ray value without its datacenter suffix (the suffix can change along the route); Ray IDs are not guaranteed globally unique. Azure exact Request-Id matches take precedence over hierarchical root context. Hierarchical roots remain a separate namespace from W3C trace IDs. Trace/root matches can describe an entire distributed operation. The priority is requestId → cfRay → correlationId → traceId → awsTraceId → azureRootId; the first matching type wins, without widening to weaker matches.
+
+Recognized text logs extract explicit supported `key=value` or `key:value` fields (including quoted values). Keys embedded in quoted logfmt messages are not interpreted as actual ID fields. JSON messages are not searched for invented structured fields.
+
+Provider references: [AWS](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-request-tracing.html), [Cloudflare headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/), [Ray ID limitations](https://developers.cloudflare.com/fundamentals/reference/cloudflare-ray-id/), [Google](https://docs.cloud.google.com/trace/docs/trace-context), [Azure/.NET](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/distributed-tracing-concepts), [Sentry SDK](https://github.com/getsentry/sentry-go/blob/master/tracing.go).
+
+### Detected log formats
+
+Detection runs per entry. The workspace, CLI summary, and reports show all detected formats and entry counts. Stack continuations do not count as new entries. Logback and Log4j2 share a format label because their common default shapes cannot identify the originating library reliably.
+
+| Detected format | Example shape |
+| --- | --- |
+| JSON | NDJSON or an array of objects; dotted/nested ECS fields supported |
+| Spring Boot text | `2026-11-07T14:32:08Z ERROR 33 --- [main] api.Service : Failed requestId=pay-42` |
+| Logback / Log4j2 text | `14:32:08.123 [main] ERROR api.Service - Failed requestId=pay-42` (full date also accepted) |
+| Python logging | `ERROR:api:Failed request_id=pay-42` or `2026-11-07 14:32:08,123 - api - ERROR - Failed request_id=pay-42` |
+| Timestamp + level text | `2026-11-07T14:32:08Z ERROR requestId=pay-42 Failed` |
+| logfmt | `time=2026-11-07T14:32:08Z level=error request_id=pay-42 msg="Payment failed"` |
+| Apache / nginx access | Common/combined format; an optional explicit `request_id=...` field can link it |
+| Docker JSON | `{"log":"...\n","stream":"stderr","time":"2026-11-07T14:32:08Z"}`; unwraps text/JSON and uses envelope time |
+| Unstructured text | Retained with a visible warning; no IDs inferred |
+
+These are supported shapes, not every possible custom logging pattern. Default access logs often have no ID; install the nginx snippet below. Time-only Java defaults and Python logs without an offset can still link by ID, but cannot produce time hints. No date or timezone is invented. ANSI color sequences are stripped from text logs. Malformed JSON lines are skipped with a count, never silently reinterpreted as another format.
+
+### When nothing links
+
+The workspace explains whether the HAR has no usable ID headers, logs are absent, logs have no usable ID fields, identifier types do not overlap, or compatible types have different values. It links directly to the setup guide. Diagnostics contain field types and guidance, never original identifier values. Fixing instrumentation only helps **new** HAR/log captures.
+
+### Optional time hints
+
+The **Show time hints** checkbox and CLI `--timestamp-hints` flag are **off by default**. They suggest up to three unlinked log entries within ±2 seconds of each unlinked request's start, ordered by distance. A complete date and explicit UTC offset are required on both sides. Logs with contradictory known IDs or existing confirmed links are excluded. Clock skew, concurrency, and reused timestamps can mislead.
+
+Hints are labeled **unconfirmed guesses** in the UI, HTML, and Markdown, and stored separately in JSON `incident.correlation.timestampHints`. They do not change `logIds`, `matchKind`, confirmed-link counts, or unlinked counts. There is a 5,000-hint incident limit and a 200-candidate per-request limit for dense windows; reaching a limit produces a warning. Hints reference already redacted evidence only.
+
+### Add request IDs
+
+Return `X-Request-ID` to the browser and include the **same** ID in server logs. Choose the relevant snippet below, or open **How it works → Add request IDs** in the UI and copy it there. The snippets are kept in sync by `node scripts/update-guides.mjs`.
+
+IDs are diagnostic labels, never credentials. Validate incoming values or generate them at a trusted edge. Preserve the ID through proxies/downstream calls; for cross-origin browser JavaScript that reads it, expose `X-Request-ID` through CORS. Record a new HAR and matching logs after installation. Check the response header and log field contain identical values before importing.
+
+<!-- request-id-guides:start -->
+
+### Spring Boot
+
+Spring Boot 3+, synchronous Servlet MVC. Put this class in a scanned package and the logging property in application.properties. For @Async, reactive work, or worker pools, use Micrometer Tracing/context propagation; MDC is thread-local.
+
+```java
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.UUID;
+import org.slf4j.MDC;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+@Component
+public class RequestIdFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String incoming = request.getHeader("X-Request-ID");
+        String id = incoming != null && incoming.matches("[A-Za-z0-9._-]{1,128}")
+            ? incoming : UUID.randomUUID().toString();
+        String previous = MDC.get("requestId");
+        MDC.put("requestId", id);
+        response.setHeader("X-Request-ID", id);
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            if (previous == null) MDC.remove("requestId");
+            else MDC.put("requestId", previous);
+        }
+    }
+}
+
+// application.properties (separate file):
+// logging.pattern.console=%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level %logger{36} requestId=%X{requestId} %msg%n
+```
+
+[API reference](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/web/filter/OncePerRequestFilter.html)
+
+### Express
+
+Node 18+, Express 4/5, ES modules. Install this middleware before routes. Call log() inside request work so async operations inherit the ID. The finish event writes the same ID explicitly.
+
+```javascript
+import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const app = express();
+const context = new AsyncLocalStorage();
+function log(level, message) {
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(),
+    level, message, requestId: context.getStore()?.requestId }));
+}
+app.use((req, res, next) => {
+  const incoming = req.get('X-Request-ID');
+  const requestId = /^[A-Za-z0-9._-]{1,128}$/.test(incoming ?? '')
+    ? incoming : randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+  res.on('finish', () => console.log(JSON.stringify({
+    timestamp: new Date().toISOString(), level: 'INFO',
+    message: 'HTTP ' + res.statusCode, requestId
+  })));
+  context.run({ requestId }, next);
+});
+app.get('/example', (req, res) => {
+  log('INFO', 'Example requested');
+  res.json({ ok: true });
+});
+app.listen(3000);
+```
+
+[API reference](https://nodejs.org/api/async_context.html#class-asynclocalstorage)
+
+### Django
+
+Save as myapp/request_ids.py. Add myapp.request_ids.RequestIdMiddleware near the start of MIDDLEWARE. The sync middleware also works through Django’s ASGI adaptation; streaming iterators and background tasks need explicit context propagation. Merge the shown handler/filter configuration into your existing LOGGING setting.
+
+```python
+import logging
+import re
+import time
+from contextvars import ContextVar
+from uuid import uuid4
+
+request_id = ContextVar("request_id", default="-")
+
+class RequestIdFilter(logging.Filter):
+    def filter(self, record):
+        record.request_id = request_id.get()
+        return True
+
+class UtcFormatter(logging.Formatter):
+    converter = time.gmtime
+
+class RequestIdMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        incoming = request.headers.get("X-Request-ID", "")
+        value = incoming if re.fullmatch(r"[A-Za-z0-9._-]{1,128}", incoming) else str(uuid4())
+        token = request_id.set(value)
+        try:
+            response = self.get_response(request)
+            response["X-Request-ID"] = value
+            logging.getLogger("myapp").info("HTTP %s", response.status_code)
+            return response
+        finally:
+            request_id.reset(token)
+
+# settings.py (separate file):
+LOGGING = {
+    "version": 1, "disable_existing_loggers": False,
+    "filters": {"request_id": {"()": "myapp.request_ids.RequestIdFilter"}},
+    "formatters": {"request": {
+        "()": "myapp.request_ids.UtcFormatter",
+        "format": "%(asctime)sZ %(levelname)s %(name)s request_id=%(request_id)s %(message)s",
+        "datefmt": "%Y-%m-%dT%H:%M:%S",
+    }},
+    "handlers": {"console": {"class": "logging.StreamHandler",
+        "filters": ["request_id"], "formatter": "request"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+```
+
+[API reference](https://docs.djangoproject.com/en/5.2/topics/http/middleware/)
+
+### nginx
+
+Put log_format in http {}, and the remaining directives in the server/location that proxies your application. Check inherited add_header directives when merging. Use the generated edge ID consistently; the backend should preserve X-Request-ID and log it too.
+
+```nginx
+# Inside http {}:
+log_format bugparcel escape=json
+    '{"timestamp":"$time_iso8601","level":"INFO",'
+    '"request_id":"$request_id","message":"$request",'
+    '"status":$status,"duration":$request_time}';
+
+# Inside your server {} or proxying location {}:
+access_log /var/log/nginx/bugparcel.log bugparcel;
+proxy_set_header X-Request-ID $request_id;
+proxy_hide_header X-Request-ID;
+add_header X-Request-ID $request_id always;
+# Keep your existing proxy_pass directive.
+```
+
+[API reference](https://nginx.org/en/docs/http/ngx_http_log_module.html#log_format)
+
+<!-- request-id-guides:end -->
 
 ### Example structured log
 

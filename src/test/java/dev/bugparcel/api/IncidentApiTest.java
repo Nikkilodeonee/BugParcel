@@ -36,6 +36,26 @@ class IncidentApiTest {
         mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content("{\"har\":\"private-invalid-data\"}"))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("not valid JSON"))).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-invalid-data"))));
     }
+    @Test void correlationDiagnosticsFormatsAndHintsReachTheApiAndExports()throws Exception {
+        String har,logs;
+        try(var stream=getClass().getResourceAsStream("/samples/correlation.har")) {har=new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+        try(var stream=getClass().getResourceAsStream("/samples/correlation.log")) {logs=new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+        var source=mapper.createObjectNode().put("har",har).put("logs",logs).put("title","Correlation review");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.incident.correlation.timestampHintsEnabled").value(false))
+            .andExpect(jsonPath("$.incident.correlation.logFormats.length()").value(4))
+            .andExpect(jsonPath("$.incident.correlation.diagnostics[0].code").value("HAR_NO_IDS"));
+        source.put("timestampHints",true);
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.matchedRequests").value(0)).andExpect(jsonPath("$.unmatchedLogs").value(4))
+            .andExpect(jsonPath("$.incident.correlation.timestampHints.length()").value(3))
+            .andExpect(jsonPath("$.incident.correlation.logsWithoutZonedTime").value(1));
+        for(String format:new String[]{"html","markdown","json"}) {
+            String report=mvc.perform(post("/api/export/"+format).contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertThat(report).contains("Spring Boot text","logfmt","Docker JSON","REDACTED_EMAIL").doesNotContain("person@example.test");
+        }
+    }
     @Test void individualReviewChoicesReachEveryExportWithoutExportingTheReviewMap()throws Exception {
         var source=(com.fasterxml.jackson.databind.node.ObjectNode)mapper.readTree(input());
         String response=mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString()))

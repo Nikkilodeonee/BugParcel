@@ -17,13 +17,22 @@ jobs:
           node-version: '22'
       - run: node --check src/main/resources/static/app.js
       - run: mvn -B verify
+      - name: Synthetic redaction precision and recall
+        if: ${{ always() && hashFiles('target/redaction-corpus-metrics.json') != '' }}
+        run: node scripts/report-corpus.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: redaction-corpus-metrics
+          path: target/redaction-corpus-metrics.json
+          if-no-files-found: ignore
       - name: Command-line smoke test
         run: |
-          java -jar target/bugparcel-1.1.0.jar sample --dir "$RUNNER_TEMP/sample"
-          java -jar target/bugparcel-1.1.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
+          java -jar target/bugparcel-1.2.0.jar sample --dir "$RUNNER_TEMP/sample"
+          java -jar target/bugparcel-1.2.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
           test -s "$RUNNER_TEMP/report.html"
       - uses: actions/upload-artifact@v4
         with:
           name: bugparcel-jar
-          path: target/bugparcel-1.1.0.jar
+          path: target/bugparcel-1.2.0.jar
           retention-days: 14

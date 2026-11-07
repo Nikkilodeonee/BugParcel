@@ -9,6 +9,7 @@ import dev.bugparcel.analysis.Correlator;
 import dev.bugparcel.analysis.HarParser;
 import dev.bugparcel.analysis.IncidentService;
 import dev.bugparcel.analysis.LogParser;
+import dev.bugparcel.analysis.RedactionPolicy;
 import dev.bugparcel.export.ReportExporter;
 import dev.bugparcel.model.Models.Analysis;
 import dev.bugparcel.model.Models.AnalysisInput;
@@ -41,24 +42,24 @@ import java.util.Set;
  * can be piped.
  */
 public final class Cli {
-    public static final String VERSION = "1.1.0";
+    public static final String VERSION = "1.2.0";
     public static final int OK = 0;
     public static final int FAILURE = 1;
     public static final int USAGE = 2;
     public static final int STRICT_FAILURE = 3;
 
     private static final long MAX_INPUT_BYTES = 50_000_000L;
-    private static final List<String> CATEGORIES = List.of("CREDENTIAL", "EMAIL", "IP", "PHONE", "CUSTOM");
+    private static final List<String> CATEGORIES = List.of("CREDENTIAL", "EMAIL", "IP", "PHONE", "CUSTOM", "POLICY", "CARD", "IBAN", "PESEL", "SUSPECT");
     private static final Set<String> COMMANDS = Set.of("report", "review", "sample", "serve", "help", "version");
     private static final Set<String> VALUE_OPTIONS = Set.of(
-        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port");
+        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port", "policy", "profile");
     private static final Map<String, String> SHORT_OPTIONS = Map.of("o", "out", "q", "quiet", "h", "help");
 
     private static final Set<String> REPORT_OPTIONS = Set.of(
         "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force",
-        "include-bodies", "timestamp-hints", "strict", "quiet", "help");
+        "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "strict", "quiet", "help");
     private static final Set<String> REVIEW_OPTIONS = Set.of(
-        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "reveal", "json", "help");
+        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "reveal", "json", "help");
     private static final Set<String> SAMPLE_OPTIONS = Set.of("dir", "overwrite", "help");
 
     private final InputStream stdin;
@@ -266,6 +267,12 @@ public final class Cli {
                 + "Resolve them with --force <id> or --keep <id>; see 'bugparcel review'.");
             return STRICT_FAILURE;
         }
+        var check=analysis.incident().security().selfCheck();
+        if(args.flag("strict") && (!check.completed() || analysis.incident().security().scanLimited()
+            || check.omittedIssues()>0 || check.issues().stream().anyMatch(issue -> !issue.intentionallyKept()))) {
+            err.println("bugparcel: --strict: export self-check found unexpected remaining matches or an incomplete scan. Review before sharing.");
+            return STRICT_FAILURE;
+        }
         return OK;
     }
 
@@ -316,6 +323,8 @@ public final class Cli {
                 node.set("ambiguityReasons", mapper.valueToTree(finding.ambiguityReasons()));
                 node.set("locations", mapper.valueToTree(finding.locations()));
                 node.put("length", finding.value().length());
+                node.set("detectors", mapper.valueToTree(finding.detectors()));
+                node.put("allowlistedOccurrences", finding.allowlistedOccurrences());
                 if (reveal) {
                     node.put("value", finding.value());
                 }
@@ -353,6 +362,7 @@ public final class Cli {
         if (finding.excluded()) {
             return "kept (your choice)";
         }
+        if (finding.allowlistedOccurrences() >= finding.occurrences()) return "policy allowlist";
         if (!finding.redacted()) {
             return "category off";
         }
@@ -438,13 +448,24 @@ public final class Cli {
                 throw new UsageException("Each --redact value must be 2 to 200 characters.");
             }
         }
+        if(args.flag("no-policy") && args.one("policy")!=null) throw new UsageException("Use either --policy or --no-policy.");
+        String policyYaml=null;
+        Path policyPath=args.one("policy")!=null?resolve(args.one("policy")):workingDirectory.resolve("bugparcel.yml");
+        if(!args.flag("no-policy") && (args.one("policy")!=null || Files.exists(policyPath))) {
+            if(Files.size(policyPath)>65_536) throw new UsageException("Policy file must be at most 64 KiB.");
+            policyYaml=read(policyPath.toString());
+        }
+        var policy=RedactionPolicy.fromYaml(policyYaml);
+        if(args.flag("paranoid") && args.one("profile")!=null && !args.one("profile").equals("paranoid")) throw new UsageException("--paranoid conflicts with --profile standard.");
+        String profile=args.flag("paranoid")?"paranoid":args.one("profile");
+        String effectiveProfile=profile==null?policy.defaultProfile():RedactionPolicy.profile(profile);
         Set<String> enabled = null;
         if (!args.all("disable").isEmpty()) {
-            enabled = new LinkedHashSet<>(CATEGORIES);
+            enabled = new LinkedHashSet<>(RedactionPolicy.categoriesFor(effectiveProfile));
             for (String category : args.all("disable")) {
                 String name = category.toUpperCase(Locale.ROOT);
                 if (!CATEGORIES.contains(name)) {
-                    throw new UsageException("Unknown category '" + category + "'. Use credential, email, ip, phone, or custom.");
+                    throw new UsageException("Unknown redaction category. Use credential, email, ip, phone, custom, policy, card, iban, pesel, or suspect.");
                 }
                 enabled.remove(name);
             }
@@ -457,7 +478,7 @@ public final class Cli {
             Path name = Paths.get(harPath).getFileName();
             title = name == null ? null : "Incident: " + name;
         }
-        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"));
+        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"), profile, policyYaml, args.flag("no-decode")?Boolean.FALSE:null);
     }
 
     /** Applies --keep/--force. IDs are resolved against a first pass so short prefixes work. */
@@ -474,7 +495,7 @@ public final class Cli {
             }
         }
         return service.analyze(new AnalysisInput(base.har(), base.logs(), base.title(), base.enabledCategories(),
-            base.customValues(), base.includeBodies(), keep, force, base.timestampHints()));
+            base.customValues(), base.includeBodies(), keep, force, base.timestampHints(), base.profile(), base.policyYaml(), base.decodeContent()));
     }
 
     private static Set<String> resolveIds(List<String> prefixes, List<FindingReview> findings, String option) {
@@ -582,6 +603,9 @@ public final class Cli {
             }
         }
         err.println(analysis.redactedOccurrences() + " values redacted" + (parts.isEmpty() ? "" : " (" + String.join(", ", parts) + ")"));
+        err.println("Redaction profile: "+incident.security().profile()+" | team policy: "+incident.security().policyApplied()
+            +" | self-check: "+incident.security().selfCheck().remainingValues()+" remaining values"
+            +(incident.security().selfCheck().completed()?" (included evidence; bounded patterns)":" (incomplete)"));
         if (!incident.correlation().logFormats().isEmpty()) err.println("Detected log formats: " + incident.correlation().logFormats());
         for (var diagnostic : incident.correlation().diagnostics()) err.println("correlation: " + diagnostic.message() + " " + diagnostic.nextStep());
         for (RedactionCount count : incident.redactions()) {
@@ -608,6 +632,11 @@ public final class Cli {
                   --title <text>               Report title (default: "Incident: <har file name>")
                   --include-bodies             Include request/response bodies (redacted, truncated)
                   --timestamp-hints            Show unconfirmed time guesses (off by default; never ID links)
+                  --profile standard|paranoid  Defaults to policy setting, otherwise standard
+                  --paranoid                   Shorthand for --profile paranoid
+                  --policy <file>              Team YAML policy (auto-loads ./bugparcel.yml)
+                  --no-policy                  Disable automatic policy loading
+                  --no-decode                  Disable bounded base64/JWT/gzip inspection
 
                 Output
                   -o, --out <file>             Report path, or - for standard output (default: bugparcel-report.<ext>)
@@ -619,7 +648,7 @@ public final class Cli {
                   --disable <category>         credential, email, ip, phone, or custom (repeatable)
                   --keep <id>                  Leave a detected value visible (ID prefix from 'review')
                   --force <id>                 Redact every occurrence of a value, even ambiguous ones
-                  --strict                     Exit 3 if ambiguous values were kept by the automatic rules
+                  --strict                     Exit 3 for automatic ambiguity, unexpected residuals, or scan limits
 
                 Exit codes: 0 ok, 1 failed, 2 usage error, 3 strict check failed.""");
         } else if ("review".equals(topic)) {

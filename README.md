@@ -14,7 +14,7 @@ Requires **Java 17+** to run the packaged app. Building from source also require
 
 ```sh
 mvn verify
-java -jar target/bugparcel-1.1.0.jar
+java -jar target/bugparcel-1.2.0.jar
 ```
 
 Open **http://127.0.0.1:8087** and click **Open the sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
@@ -36,9 +36,9 @@ After a successful build, create a portable ZIP with `scripts/package.ps1`. It c
 The same JAR is also a CLI. Commands never start a server or open a port, and the report starts in well under a second.
 
 ```sh
-java -jar target/bugparcel-1.1.0.jar sample                      # writes ./bugparcel-sample/
-java -jar target/bugparcel-1.1.0.jar report checkout.har --logs app.log -o report.html
-java -jar target/bugparcel-1.1.0.jar review checkout.har --logs app.log
+java -jar target/bugparcel-1.2.0.jar sample                      # writes ./bugparcel-sample/
+java -jar target/bugparcel-1.2.0.jar report checkout.har --logs app.log -o report.html
+java -jar target/bugparcel-1.2.0.jar review checkout.har --logs app.log
 ```
 
 The portable ZIP adds `bugparcel.cmd` and `bugparcel` launchers, so these become `bugparcel report ...`.
@@ -320,17 +320,48 @@ add_header X-Request-ID $request_id always;
 
 The browser request must contain the same ID for correlation to work. BugParcel does not retroactively add IDs to logs or infer a root cause from an error message.
 
+## Redaction profiles and team policy
+
+Standard now detects AWS/GitHub/Stripe/Slack tokens, JWTs, private-key blocks, URL credentials, and the existing PII patterns. **Paranoid** adds high-entropy suspects, Luhn-checked card numbers, IBANs, and PESEL IDs. Select the profile above the workspace, or use `--paranoid` in the CLI. The **Security sample** demonstrates the new detectors using synthetic data.
+
+Bounded base64/JWT-claims/gzip inspection defaults on. Sensitive encoded containers become placeholders; supported encoded HAR text bodies are decoded and scanned when bodies are included. The export self-check rescans included evidence, flags remaining matches and incomplete checks, and reports intentional exceptions. A zero count is scoped to known patterns and the selected profile; it is not a guarantee of complete removal.
+
+The CLI auto-loads `./bugparcel.yml`; the UI lets you import it under Redactions. Example:
+
+```yaml
+version: 1
+defaultProfile: paranoid
+decodeContent: true
+rules:
+  - id: customer-reference
+    pattern: 'CUST-[0-9]{6}'
+    fields: ['* request body/customerId']
+allowlists:
+  - values: ['public@example.test']
+    fields: ['log-* message']
+```
+
+```text
+bugparcel report checkout.har --logs app.log --paranoid --strict -o report.html
+bugparcel report checkout.har --logs app.log --policy team.yml -o report.html
+bugparcel review checkout.har --logs app.log --no-policy --no-decode
+```
+
+Policy regexes use RE2/J, with bounded safe YAML and field-scoped exceptions. [Full policy schema, detector references, decoder limits, precedence, and self-check scope](docs/redaction.md). [Example policy](src/main/resources/samples/bugparcel.example.yml).
+
+The **57-case synthetic corpus** currently measures **100% precision / 100% recall (32 TP, 0 FP, 0 FN)** for its labeled automatic decisions; **350 generated property cases** exercise known-value removal from HTML/Markdown/JSON and link preservation. These figures describe the fixtures, not real-world performance. CI generates and publishes the corpus metrics.
+
 ## Privacy and limits
 
 The server binds to `127.0.0.1`. Incident content is not written to disk by the application. The browser holds the original inputs in memory; requests send them only to the local Java process. There is no external runtime service or CDN. Downloaded reports are files you choose to retain and share. JVM heap dumps, operating-system paging, browser extensions, and developer tools are outside this application's storage guarantees.
 
 Redaction is pattern-based, **not a guarantee that all sensitive information has been removed**. IPv6 numeric literals are validated locally without hostname lookup. Bare `::` and `:` separators are not automatically detected; use an explicit custom value if an unspecified IPv6 literal needs hiding. Unlabeled eight-group decimal sequences such as `10:20:30:40:50:60:70:80` are listed as ambiguous and kept automatically. An address field, explicit label such as `peer=`, or brackets makes the same numeric sequence an automatic address match.
 
-Phone detection requires a recognized field or label, such as `phone`, `mobile`, or `telephone`, with 7–15 digits in supported contiguous/grouped forms (up to five groups). Common year-first and day-first dotted/dashed dates are rejected. An extracted phone prefix ending before a timestamp colon is rejected rather than retrying a shorter prefix. Unlabeled phone numbers, names, arbitrary identifiers, and unknown secret formats still require custom values and review. Encoded query parameters are inspected; arbitrary encoded paths, base64 data, compressed data, and binary content are not decoded. Bodies are optional and truncated at 30,000 characters. Keep original files for complete evidence.
+Phone detection requires a recognized field or label, such as `phone`, `mobile`, or `telephone`, with 7–15 digits in supported contiguous/grouped forms (up to five groups). Common year-first and day-first dotted/dashed dates are rejected. An extracted phone prefix ending before a timestamp colon is rejected rather than retrying a shorter prefix. Unlabeled phone numbers, names, arbitrary identifiers, and unknown secret formats still require custom values and review. Encoded query parameters and bounded printable UTF-8 base64/JWT/gzip content are inspected; arbitrary encodings and binary content are not. Bodies are optional and truncated at 30,000 characters. Keep original files for complete evidence.
 
 Short/common credentials (under four characters, short all-digit values, or literals such as `true`) are hidden within their sensitive fields or explicitly labeled spans. They are not replaced throughout unrelated text. Automatic global matches use token boundaries. Exact custom values intentionally remain substring matches, including inside displayed correlation IDs; links are formed before redaction, and the interface/report explain this when an ID changes.
 
-The automatic boundary policy treats `_` and `-` as word characters. It preserves `real-secret-suffix`, but also leaves a known secret joined as `token_<secret>` or `prefix-<secret>` unchanged under global matching. Explicitly labeled credential spans and custom substring values provide coverage for such formats. This precision/coverage trade-off should be considered when reviewing a real incident.
+The automatic boundary policy treats `_` and `-` as word characters. It preserves `real-secret-suffix`, but also leaves a known secret joined as `token_<secret>` or `prefix-<secret>` unchanged under global matching. The self-check flags surviving long known credentials of this kind. Explicitly labeled credential spans and custom substring values provide coverage. Previously unknown embedded secrets can still evade detection; consider this precision/coverage trade-off when reviewing an incident.
 
 Only explicit version-field shapes such as `version=`, `v=`, JSON `version`, and `x-app-version` get version treatment. Ordinary prose such as `Failed to build 10.0.0.12 image` and `Using release 10.1.2.3 now` does not suppress IP redaction. Version-looking literals are always detected and listed as ambiguous findings; their version-context occurrences default to visible, while actual address occurrences of the same value are masked. **Redact all occurrences** overrides this ambiguity policy, subject to enabled categories. **Keep value** takes precedence if both choices are sent through the API. Export notices and report notes identify automatic ambiguity decisions that left values visible.
 
@@ -346,6 +377,7 @@ HTML reports escape imported strings and carry a restrictive CSP with no scripts
 | --- | --- | --- |
 | GET | `/api/health` | Local engine status |
 | GET | `/api/sample` | Fictional HAR and logs |
+| GET | `/api/sample/security` | Synthetic security demo and example policy |
 | POST | `/api/analyze` | Normalize, correlate, and redact |
 | POST | `/api/export/html` | Standalone HTML report |
 | POST | `/api/export/markdown` | Markdown report |
@@ -362,11 +394,15 @@ All POST endpoints use the same JSON input:
   "customValues": ["customer-name"],
   "includeBodies": false,
   "excludedFindingIds": [],
-  "redactFindingIds": []
+  "redactFindingIds": [],
+  "timestampHints": false,
+  "profile": "standard",
+  "policyYaml": null,
+  "decodeContent": true
 }
 ```
 
-Omit `enabledCategories` to enable every category. An explicit empty array disables all categories. The normalized export contains no original input files, original filenames, or private redaction mapping. IDs internal to the report (`req-1`, `log-1`) preserve links after redaction.
+Omit `enabledCategories` to use the selected profile's defaults. An explicit empty array disables all categories. Omit `profile`/`decodeContent` to honor the policy defaults (otherwise standard/on). Paranoid-only detectors run only in the paranoid profile. Categories are `CREDENTIAL`, `EMAIL`, `IP`, `PHONE`, `CUSTOM`, `POLICY`, `CARD`, `IBAN`, `PESEL`, `SUSPECT`. The normalized export excludes original input files, policy text, and the private review map. A CLI-generated title can use the input filename. Internal report IDs (`req-1`, `log-1`) preserve links after redaction. Schema 1.4 adds `incident.security` with profile/decoder/policy counts and a bounded self-check.
 
 `/api/analyze` also returns `findings`, separate from `incident`. Each finding includes a stable ID, original value, categories, source locations, field-scoping flag, substitution count, and ambiguity reasons/counts. Pass IDs in `excludedFindingIds` to keep them or `redactFindingIds` to override ambiguity and redact them. Omit an ID from both sets for Automatic. The same choices are accepted by all export routes. IDs are local review identifiers, not bearer credentials. Export schema `1.2` records exclusion/explicit-redaction counts, an automatically kept ambiguity count, and actual per-category replacement counts, with no original review list or IDs.
 

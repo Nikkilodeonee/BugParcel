@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 /**
  * Request-local discovery, review decisions, and replacement.
@@ -41,6 +43,11 @@ final class Redactor {
         labels.put("IP", "IP addresses");
         labels.put("PHONE", "Labeled phone numbers");
         labels.put("CUSTOM", "Your custom values");
+        labels.put("POLICY", "Team policy rules");
+        labels.put("CARD", "Card numbers (checksum)");
+        labels.put("IBAN", "IBANs (checksum)");
+        labels.put("PESEL", "PESEL IDs (date & checksum)");
+        labels.put("SUSPECT", "High-entropy suspects");
         LABELS = Collections.unmodifiableMap(labels);
     }
 
@@ -51,6 +58,15 @@ final class Redactor {
     private final Map<String, Candidate> candidates = new LinkedHashMap<>();
     private final Trie trie = new Trie();
     private int totalRedactions;
+    private final RedactionPolicy policy;
+    private final boolean paranoid;
+    private final boolean decodeContent;
+    private final DecodedContent decoder;
+    private final Set<String> ignoredPlaceholders;
+    private final List<String> customLiterals;
+    private final Deque<Set<Candidate>> decodeCaptures = new ArrayDeque<>();
+    private final Map<String,List<Span>> encodedSpans = new HashMap<>();
+    private int decodeDepth;
 
     private static final class Candidate {
         final String id;
@@ -61,6 +77,9 @@ final class Redactor {
         final Set<String> ambiguousOccurrences = new LinkedHashSet<>();
         final Set<String> ambiguousKeptOccurrences = new LinkedHashSet<>();
         final Set<String> ambiguityReasons = new LinkedHashSet<>();
+        final Set<String> detectors = new LinkedHashSet<>();
+        final Set<String> allowlistedOccurrences = new LinkedHashSet<>();
+        final Map<String,String> contextualReasons = new HashMap<>();
         String replacement;
         String replacementCategory;
         int replacements;
@@ -82,12 +101,13 @@ final class Redactor {
             if (!reason.isEmpty()) {
                 ambiguousOccurrences.add(location + ":" + offset);
                 ambiguityReasons.add(reason);
+                contextualReasons.put(location + ":" + offset, reason);
             }
         }
 
         boolean fieldOnly() {
-            return categories.stream().allMatch("CREDENTIAL"::equals)
-                && !RedactionPatterns.canMatchGlobally(value);
+            return categories.stream().allMatch(category -> category.equals("POLICY")
+                || category.equals("CREDENTIAL") && !RedactionPatterns.canMatchGlobally(value));
         }
     }
 
@@ -96,7 +116,7 @@ final class Redactor {
         Candidate candidate;
     }
 
-    private record Span(Candidate candidate, int start, int end) {}
+    private record Span(Candidate candidate, int start, int end, String category) {}
 
     Redactor(ObjectMapper mapper, Set<String> enabled, List<String> custom, Set<String> exclusions) {
         this(mapper, enabled, custom, exclusions, Set.of());
@@ -104,8 +124,24 @@ final class Redactor {
 
     Redactor(ObjectMapper mapper, Set<String> enabled, List<String> custom, Set<String> exclusions,
              Set<String> forcedValues) {
+        this(mapper, enabled, custom, exclusions, forcedValues, RedactionPolicy.fromYaml(null), "standard", true);
+    }
+
+    Redactor(ObjectMapper mapper, Set<String> enabled, List<String> custom, Set<String> exclusions,
+             Set<String> forcedValues, RedactionPolicy policy, String profile, boolean decodeContent) {
+        this(mapper, enabled, custom, exclusions, forcedValues, policy, profile, decodeContent, Set.of());
+    }
+
+    Redactor(ObjectMapper mapper, Set<String> enabled, List<String> custom, Set<String> exclusions,
+             Set<String> forcedValues, RedactionPolicy policy, String profile, boolean decodeContent, Set<String> ignoredPlaceholders) {
         this.mapper = mapper;
-        this.enabledCategories = enabled == null ? LABELS.keySet() : Set.copyOf(enabled);
+        this.policy = policy;
+        this.paranoid = RedactionPolicy.profile(profile).equals("paranoid");
+        this.decodeContent = decodeContent;
+        this.decoder = new DecodedContent(mapper);
+        this.ignoredPlaceholders = Set.copyOf(ignoredPlaceholders);
+        this.customLiterals = custom == null ? List.of() : custom.stream().filter(value -> value != null && !value.isBlank()).toList();
+        this.enabledCategories = enabled == null ? RedactionPolicy.categoriesFor(profile) : Set.copyOf(enabled);
         this.exclusions = exclusions == null ? Set.of() : Set.copyOf(exclusions);
         this.forcedValues = forcedValues == null ? Set.of() : Set.copyOf(forcedValues);
         if (!LABELS.keySet().containsAll(enabledCategories)) {
@@ -215,16 +251,19 @@ final class Redactor {
                 exclusions.contains(candidate.id), candidate.fieldOnly(), List.copyOf(candidate.locations),
                 !candidate.ambiguityReasons.isEmpty(), candidate.ambiguousOccurrences.size(),
                 candidate.ambiguousKeptOccurrences.size(), List.copyOf(candidate.ambiguityReasons),
-                forcedValues.contains(candidate.id)))
+                forcedValues.contains(candidate.id), List.copyOf(candidate.detectors), candidate.allowlistedOccurrences.size()))
             .toList();
     }
 
     int totalRedactions() {
         return totalRedactions;
     }
+    int decodedValues() { return decoder.decoded(); }
+    int decodedSkipped() { return decoder.skipped(); }
+    boolean scanLimited() { return decoder.limited(); }
 
     private Candidate register(String category, String value) {
-        if (value == null || value.isBlank() || value.startsWith("[REDACTED_") || value.length() > 30_000) {
+        if (value == null || value.isBlank() || ignoredPlaceholders.contains(value) || value.length() > 65_536) {
             return null;
         }
         if (candidates.size() >= 20_000 && !candidates.containsKey(value)) {
@@ -239,6 +278,8 @@ final class Redactor {
         Candidate candidate = register(category, value);
         if (candidate != null) {
             candidate.observe(location, offset);
+            if (policy.allows(value, location)) candidate.allowlistedOccurrences.add(location + ":" + offset);
+            for (Set<Candidate> capture : decodeCaptures) capture.add(candidate);
         }
         return candidate;
     }
@@ -254,11 +295,11 @@ final class Redactor {
         // URI user-info is a credential span. Do not misclassify its trailing
         // username/host as an email and accidentally consume the URI slashes.
         Matcher userInfo = RedactionPatterns.USER_INFO.matcher(value);
-        boolean hasUserInfo = userInfo.find();
+        List<int[]> userInfos = new ArrayList<>();
+        while (userInfo.find()) userInfos.add(new int[]{userInfo.start(1), userInfo.end(1)});
         Matcher email = RedactionPatterns.EMAIL.matcher(value);
         while (email.find()) {
-            boolean overlapsUserInfo = hasUserInfo && email.start() <= userInfo.end(1)
-                && email.end() > userInfo.start(1);
+            boolean overlapsUserInfo = userInfos.stream().anyMatch(range -> email.start() <= range[1] && email.end() > range[0]);
             if (!overlapsUserInfo) {
                 discover("EMAIL", email.group(), location, email.start());
             }
@@ -274,6 +315,35 @@ final class Redactor {
             }
         }
         scopedSpans(value, location, true);
+        for (String custom : customLiterals) {
+            if (custom == null || custom.isBlank()) continue;
+            for (int at = value.indexOf(custom); at >= 0; at = value.indexOf(custom, at + custom.length()))
+                discover("CUSTOM", custom, location, at);
+        }
+        discoverDecoded(value, location);
+    }
+
+    private void discoverDecoded(String value, String location) {
+        if (!decodeContent) return;
+        if (decodeDepth >= 2) { if (DecodedContent.looksEncoded(value)) decoder.depthLimit(); return; }
+        for (var piece : decoder.pieces(value)) {
+            Set<Candidate> captured = new LinkedHashSet<>();
+            decodeCaptures.push(captured);
+            decodeDepth++;
+            try { discoverBody(piece.text(), location + " decoded " + piece.kind()); }
+            finally { decodeDepth--; decodeCaptures.pop(); }
+            Candidate wrapper = null;
+            for (Candidate child : captured) for (String category : List.copyOf(child.categories)) {
+                wrapper = discover(category, piece.encoded(), location, piece.start());
+                if (wrapper != null) wrapper.detectors.add("Decoded " + piece.kind());
+            }
+            if (wrapper != null) {
+                if (captured.stream().allMatch(c -> c.categories.equals(Set.of("IP")) && !c.ambiguityReasons.isEmpty()))
+                    wrapper.observeAmbiguity(location, piece.start(), "Decoded content contains an ambiguous IP/version value.");
+                List<Span> spans = encodedSpans.computeIfAbsent(location, ignored -> new ArrayList<>());
+                for (String category : wrapper.categories) spans.add(new Span(wrapper, piece.start(), piece.end(), category));
+            }
+        }
     }
 
     private void discoverAddress(Matcher match, String value, String location,
@@ -290,6 +360,27 @@ final class Redactor {
         List<Span> spans = new ArrayList<>();
         collectGroups(RedactionPatterns.TOKEN.matcher(value), 1, 3, "CREDENTIAL", location, discovering, spans);
         collectGroups(RedactionPatterns.PAIR.matcher(value), 2, 4, "CREDENTIAL", location, discovering, spans);
+        boolean identifierField = location.contains("correlation IDs") || location.matches(".*headers/(?:traceparent|sentry-trace|x-b3-traceid|cf-ray|x-cloud-trace-context|x-amzn-trace-id)$");
+        for (var hit : AdditionalDetectors.scan(value, paranoid, identifierField)) {
+            Candidate candidate = discovering ? discover(hit.category(), hit.value(), location, hit.start()) : candidates.get(hit.value());
+            if (candidate != null) {
+                candidate.detectors.add(hit.detector());
+                spans.add(new Span(candidate, hit.start(), hit.end(), hit.category()));
+            }
+        }
+        for (var rule : policy.rules()) {
+            if (!RedactionPolicy.matchesField(rule.fields(), location)) continue;
+            var matcher = rule.pattern().matcher(value);
+            while (matcher.find()) {
+                if (matcher.start() == matcher.end()) continue;
+                Candidate candidate = discovering ? discover("POLICY", matcher.group(), location, matcher.start()) : candidates.get(matcher.group());
+                if (candidate != null) {
+                    candidate.detectors.add("Team policy: " + rule.id());
+                    spans.add(new Span(candidate, matcher.start(), matcher.end(), "POLICY"));
+                }
+            }
+        }
+        if (!discovering) spans.addAll(encodedSpans.getOrDefault(location, List.of()));
         Matcher phones = RedactionPatterns.PHONE_PAIR.matcher(value);
         while (phones.find()) {
             String phone = phones.group(1).stripTrailing();
@@ -298,16 +389,16 @@ final class Redactor {
             }
             Candidate candidate = discovering ? discover("PHONE", phone, location, phones.start(1)) : candidates.get(phone);
             if (candidate != null) {
-                spans.add(new Span(candidate, phones.start(1), phones.start(1) + phone.length()));
+                spans.add(new Span(candidate, phones.start(1), phones.start(1) + phone.length(), "PHONE"));
             }
         }
         Matcher userInfo = RedactionPatterns.USER_INFO.matcher(value);
-        if (userInfo.find()) {
+        while (userInfo.find()) {
             Candidate candidate = discovering
                 ? discover("CREDENTIAL", userInfo.group(1), location, userInfo.start(1))
                 : candidates.get(userInfo.group(1));
             if (candidate != null) {
-                spans.add(new Span(candidate, userInfo.start(1), userInfo.end(1)));
+                spans.add(new Span(candidate, userInfo.start(1), userInfo.end(1), "CREDENTIAL"));
             }
         }
         return spans;
@@ -323,7 +414,7 @@ final class Redactor {
                 }
                 Candidate candidate = discovering ? discover(category, value, location, matcher.start(group)) : candidates.get(value);
                 if (candidate != null) {
-                    spans.add(new Span(candidate, matcher.start(group), matcher.end(group)));
+                    spans.add(new Span(candidate, matcher.start(group), matcher.end(group), category));
                 }
             }
         }
@@ -402,6 +493,8 @@ final class Redactor {
                 .orElseGet(() -> candidate.categories.iterator().next());
             candidate.replacement = "[REDACTED_" + candidate.replacementCategory + "_"
                 + numbers.merge(candidate.replacementCategory, 1, Integer::sum) + "]";
+            while (candidates.containsKey(candidate.replacement)) candidate.replacement = "[REDACTED_" + candidate.replacementCategory + "_"
+                + numbers.merge(candidate.replacementCategory, 1, Integer::sum) + "]";
             if (candidate.fieldOnly()) {
                 continue;
             }
@@ -422,7 +515,8 @@ final class Redactor {
     }
 
     private boolean hasRedactionRule(Candidate candidate) {
-        return active(candidate) && (explicitCustom(candidate) || forcedValues.contains(candidate.id)
+        return active(candidate) && candidate.occurrences.size() > candidate.allowlistedOccurrences.size()
+            && (explicitCustom(candidate) || forcedValues.contains(candidate.id)
             || candidate.occurrences.size() > candidate.ambiguousOccurrences.size());
     }
 
@@ -442,7 +536,7 @@ final class Redactor {
             return true;
         }
         boolean automaticGlobal = candidate.categories.stream().filter(enabledCategories::contains)
-            .anyMatch(category -> !category.equals("CREDENTIAL") || RedactionPatterns.canMatchGlobally(candidate.value));
+            .anyMatch(category -> !category.equals("POLICY") && (!category.equals("CREDENTIAL") || RedactionPatterns.canMatchGlobally(candidate.value)));
         if (!automaticGlobal) {
             return false;
         }
@@ -472,7 +566,10 @@ final class Redactor {
             List<Candidate> keptAmbiguities = new ArrayList<>();
             for (Span span : scoped.getOrDefault(offset, List.of())) {
                 span.candidate().observe(location, offset);
-                if (active(span.candidate()) && span.end() > end) {
+                if (policy.allows(span.candidate().value, location)) span.candidate().allowlistedOccurrences.add(location + ":" + offset);
+                String reason = span.candidate().contextualReasons.getOrDefault(location + ":" + offset, "");
+                if (active(span.candidate()) && enabledCategories.contains(span.category()) && !policy.allows(span.candidate().value, location)
+                    && redactAmbiguity(span.candidate(), reason) && span.end() > end) {
                     chosen = span.candidate();
                     end = span.end();
                 }
@@ -487,12 +584,14 @@ final class Redactor {
                 if (candidate != null && eligible(candidate, value, offset, cursor + 1)) {
                     String reason = candidate.categories.contains("IP") ? RedactionPatterns.ipAmbiguity(
                         candidate.value, value, offset, cursor + 1, versionField, addressField) : "";
+                    reason = candidate.contextualReasons.getOrDefault(location + ":" + offset, reason);
                     candidate.observeAmbiguity(location, offset, reason);
+                    if (policy.allows(candidate.value, location)) candidate.allowlistedOccurrences.add(location + ":" + offset);
                     boolean redact = redactAmbiguity(candidate, reason);
                     if (active(candidate) && !redact) {
                         keptAmbiguities.add(candidate);
                     }
-                    if (active(candidate) && redact && cursor + 1 > end) {
+                    if (active(candidate) && !policy.allows(candidate.value, location) && redact && cursor + 1 > end) {
                         chosen = candidate;
                         end = cursor + 1;
                     }
@@ -517,7 +616,8 @@ final class Redactor {
             || (RedactionPatterns.phoneKey(key) && RedactionPatterns.isPhone(value));
         if (labeled && candidate != null) {
             candidate.observe(location, 0);
-            if (active(candidate)) {
+            if (active(candidate) && !policy.allows(value, location)
+                && (RedactionPatterns.sensitiveKey(key) ? enabledCategories.contains("CREDENTIAL") : enabledCategories.contains("PHONE"))) {
                 return replace(candidate);
             }
         }
@@ -531,7 +631,7 @@ final class Redactor {
             String secret = authorizationValue(key, value);
             String clean;
             Candidate candidate = candidates.get(secret);
-            if (!secret.equals(value) && candidate != null && active(candidate)) {
+            if (!secret.equals(value) && candidate != null && active(candidate) && enabledCategories.contains("CREDENTIAL") && !policy.allows(secret, field)) {
                 clean = value.substring(0, value.length() - secret.length()) + replace(candidate);
             } else {
                 clean = scalar(key, value, field);

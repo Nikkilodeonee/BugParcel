@@ -1,0 +1,10 @@
+{
+  "scope" : "Synthetic automatic-redaction fixtures; not real-world accuracy or a security guarantee",
+  "cases" : 57,
+  "negativeCases" : 25,
+  "truePositives" : 32,
+  "falsePositives" : 0,
+  "falseNegatives" : 0,
+  "precision" : 1.0,
+  "recall" : 1.0
+}

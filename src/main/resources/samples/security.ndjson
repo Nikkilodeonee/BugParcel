@@ -1,0 +1,5 @@
+{"timestamp":"2026-11-07T14:32:08Z","level":"ERROR","logger":"demo.credentials","requestId":"security-demo","message":"Synthetic AWS ASIA0123456789ABCDEF and Slack xoxb-12345678901-12345678901-abcdefghijklmno"}
+{"timestamp":"2026-11-07T14:32:08.100Z","level":"WARN","logger":"demo.identifiers","requestId":"security-demo","message":"Synthetic card 4111 1111 1111 1111; IBAN PL61109010140000071219812874; PESEL 02070803628"}
+{"timestamp":"2026-11-07T14:32:08.200Z","level":"INFO","logger":"demo.encoding","requestId":"security-demo","message":"Encoded payload=cGVyc29uQGV4YW1wbGUudGVzdA== and JWT eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InBlcnNvbkBleGFtcGxlLnRlc3QifQ.syntheticSignature"}
+{"timestamp":"2026-11-07T14:32:08.300Z","level":"ERROR","logger":"demo.keys","requestId":"security-demo","message":"-----BEGIN EC PRIVATE KEY-----\nSYNTHETIC-NONKEY-DATA\n-----END EC PRIVATE KEY-----"}
+{"timestamp":"2026-11-07T14:32:08.400Z","level":"INFO","logger":"demo.policy","requestId":"security-demo","message":"Team label TEAM-ALPHA. Intentionally public contact public@example.test. Random Q7bM2nK9xR4vT6zL3pW8cY5hS1jF0dA9"}

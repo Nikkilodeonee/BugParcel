@@ -20,7 +20,7 @@ final class RedactionPatterns {
     static final Pattern PHONE_PAIR = Pattern.compile(KEY_START
         + "(?:phone(?:[_-]?number)?|mobile(?:[_-]?number)?|telephone|tel|contactPhone)[\"']?\\s*[:=]\\s*[\"']?"
         + "(\\+?[0-9(][0-9() .-]{5,}[0-9])");
-    static final Pattern USER_INFO = Pattern.compile("(?i)^https?://([^/@]+)@");
+    static final Pattern USER_INFO = Pattern.compile("(?i)\\b[a-z][a-z0-9+.-]{1,20}://([^\\s/@]+)@");
     static final Pattern FORM = Pattern.compile("[^\\s=&]+=[^\\r\\n]*(?:&[^\\s=&]+=[^\\r\\n]*)?");
     private static final Pattern VERSION_PREFIX = Pattern.compile(KEY_START
         + "(?:v|ver|version|semver|(?:x[-_.])?(?:app|api|service|software|application|product|build|release)[-_.]?version)"

@@ -17,8 +17,15 @@ public final class Models {
         boolean includeBodies,
         @Size(max=20_000) Set<@Size(min=64,max=64) String> excludedFindingIds,
         @Size(max=20_000) Set<@Size(min=64,max=64) String> redactFindingIds,
-        boolean timestampHints
+        boolean timestampHints,
+        @Size(max=16) String profile,
+        @Size(max=65_536) String policyYaml,
+        Boolean decodeContent
     ) {
+        public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
+                             boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds,boolean timestampHints) {
+            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,redactFindingIds,timestampHints,null,null,null);
+        }
         public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,boolean includeBodies) {
             this(har,logs,title,enabledCategories,customValues,includeBodies,Set.of(),Set.of(),false);
         }
@@ -40,15 +47,20 @@ public final class Models {
     public record RedactionCount(String category, String label, int occurrences, int uniqueValues, boolean enabled, int redactedOccurrences) {}
     public record FindingReview(String id, String value, List<String> categories, String replacement,
         int occurrences, int replacements, boolean redacted, boolean excluded, boolean fieldOnly, List<String> locations,
-        boolean ambiguous, int ambiguousOccurrences, int ambiguousKeptOccurrences, List<String> ambiguityReasons, boolean forced) {}
+        boolean ambiguous, int ambiguousOccurrences, int ambiguousKeptOccurrences, List<String> ambiguityReasons, boolean forced,
+        List<String> detectors, int allowlistedOccurrences) {}
     public record LogFormat(String name, int entries) {}
     public record CorrelationDiagnostic(String code, String message, String nextStep) {}
     public record TimestampHint(String requestId, String logId, long distanceMs) {}
     public record CorrelationReview(List<LogFormat> logFormats, List<CorrelationDiagnostic> diagnostics,
         boolean timestampHintsEnabled, List<TimestampHint> timestampHints, int logsWithoutZonedTime) {}
+    public record SelfCheckIssue(List<String> categories, String location, boolean intentionallyKept) {}
+    public record SelfCheck(int remainingValues, boolean completed, int omittedIssues, List<SelfCheckIssue> issues) {}
+    public record SecurityReview(String profile, boolean decodeContent, boolean policyApplied, int policyRules,
+        int allowlistRules, int decodedValues, int decodedSkipped, boolean scanLimited, SelfCheck selfCheck) {}
     public record Incident(String schemaVersion, String title, String createdAt, List<RequestEntry> requests,
         List<LogEntry> logs, List<String> warnings, List<RedactionCount> redactions, boolean includesBodies,
-        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation) {}
+        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation, SecurityReview security) {}
     public record Analysis(Incident incident, int failedRequests, int matchedRequests, int unmatchedLogs,
         int redactedOccurrences, List<FindingReview> findings) {}
 }

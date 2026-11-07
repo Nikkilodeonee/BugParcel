@@ -206,6 +206,51 @@ class CliTest {
             .isEqualTo(Cli.FAILURE);
         assertThat(run(new byte[0], "report", "-", "--logs", "-").code()).isEqualTo(Cli.USAGE);
     }
+    @Test
+    void teamPolicyAutoLoadsAndCanBeOverriddenWithoutStartingAServer() throws Exception {
+        Files.writeString(temp.resolve("bugparcel.yml"),"version: 1\ndefaultProfile: paranoid\nrules:\n  - id: team-name\n    pattern: 'TEAM-[A-Z]{5}'\n");
+        Files.writeString(temp.resolve("policy.ndjson"),"{\"message\":\"TEAM-ALPHA card 4111111111111111\"}");
+        var result=run("report","s/checkout.har","--logs","policy.ndjson","--format","json","-o","-","--quiet");
+        assertThat(result.code()).isZero();
+        var incident=mapper.readTree(result.out());
+        assertThat(incident.path("security").path("policyApplied").asBoolean()).isTrue();
+        assertThat(incident.path("security").path("profile").asText()).isEqualTo("paranoid");
+        assertThat(result.out()).doesNotContain("TEAM-ALPHA","4111111111111111","team-name","pattern:");
+        var ignored=run("report","s/checkout.har","--logs","policy.ndjson","--no-policy","--format","json","-o","-","--quiet");
+        assertThat(ignored.out()).contains("TEAM-ALPHA","4111111111111111");
+        assertThat(run("report","s/checkout.har","--policy","bugparcel.yml","--no-policy").code()).isEqualTo(Cli.USAGE);
+        assertThat(run("report","s/checkout.har","--paranoid","--profile","standard").code()).isEqualTo(Cli.USAGE);
+        assertThat(run("report","s/checkout.har","--policy","bugparcel.yml","--profile","standard","--format","json","-o","-","--quiet").out()).contains("\"profile\" : \"standard\"");
+    }
+
+    @Test
+    void strictChecksUnexpectedResidualsAndDecodeLimitWhileAllowlistingRemainsExplicit() throws Exception {
+        String secret="database-secret-12345";
+        Files.writeString(temp.resolve("residual.ndjson"),"{\"message\":\"password="+secret+" and prefix_"+secret+"\"}");
+        var result=run("report","s/checkout.har","--logs","residual.ndjson","--strict","--format","json","-o","-","--quiet");
+        assertThat(result.code()).isEqualTo(Cli.STRICT_FAILURE);
+        assertThat(result.err()).contains("unexpected remaining matches");
+        assertThat(mapper.readTree(result.out()).path("security").path("selfCheck").path("remainingValues").asInt()).isOne();
+        Files.writeString(temp.resolve("allow.yml"),"version: 1\nallowlists:\n  - values: ['person@example.test']\n");
+        Files.writeString(temp.resolve("allow.ndjson"),"{\"message\":\"person@example.test\"}");
+        var allowed=run("report","s/checkout.har","--logs","allow.ndjson","--policy","allow.yml","--strict","--format","json","-o","-","--quiet");
+        assertThat(allowed.code()).isZero();
+        assertThat(mapper.readTree(allowed.out()).path("security").path("selfCheck").path("remainingValues").asInt()).isOne();
+    }
+
+    @Test
+    void decoderFlagAndPolicyErrorsAreVisibleWithoutEchoingPolicySecrets() throws Exception {
+        String encoded=java.util.Base64.getEncoder().encodeToString("person@example.test".getBytes(StandardCharsets.UTF_8));
+        Files.writeString(temp.resolve("encoded.ndjson"),"{\"message\":\"payload="+encoded+"\"}");
+        var on=run("report","s/checkout.har","--logs","encoded.ndjson","--format","json","-o","-","--quiet");
+        assertThat(on.out()).doesNotContain(encoded);
+        var off=run("report","s/checkout.har","--logs","encoded.ndjson","--no-decode","--format","json","-o","-","--quiet");
+        assertThat(off.out()).contains(encoded,"Decoded-content scanning is disabled");
+        Files.writeString(temp.resolve("bad.yml"),"version: 1\nrules: [{id: bad, pattern: '(?<=private-policy-secret).*'}]");
+        var invalid=run("report","s/checkout.har","--policy","bad.yml");
+        assertThat(invalid.code()).isEqualTo(Cli.FAILURE);
+        assertThat(invalid.err()).doesNotContain("private-policy-secret").contains("Invalid policy regex");
+    }
 
     @Test
     void badInputNeverEchoesItsContent() throws Exception {

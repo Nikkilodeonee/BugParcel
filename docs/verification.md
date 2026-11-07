@@ -63,4 +63,20 @@ Screenshots: [correlation workspace](tier-1-workspace.png), [narrow setup guide]
 
 Time hints remain guesses. Custom logging patterns outside the documented shapes can remain unstructured. Example middleware has documented async/streaming integration limits; the Express/Django/nginx snippets were inspected against primary API references but were not deployed into separate framework applications here.
 
-Docker configuration and GitHub Actions are supplied but were not executed in this Windows session. No live user incident data or external service was used. Automatic redaction is still a bounded detector and should be reviewed before sharing real reports.
+## Tier 2 redaction release (1.2.0)
+
+- Final Java 17 result: **130 tests passed**, including two jqwik properties exercising **350 generated cases**. Provider secrets and encoded containers are checked across HTML/Markdown/JSON; custom values inside IDs retain confirmed links.
+- Synthetic corpus: **57 cases**, 25 negative cases, 32 true positives, 0 false positives, 0 misses; precision/recall 100% **on this fixture set only**. Tests generate `target/redaction-corpus-metrics.json`; CI is configured to gate the cases and publish a summary/artifact. Recorded metrics: [JSON](corpus-metrics.json).
+- Regression coverage includes AWS/GitHub/Stripe/Slack tokens, signed and unsigned JWT shapes, complete/incomplete private-key blocks, multiple HTTP/database URL credentials, Luhn cards, IBAN country length/MOD-97, PESEL date/checksum, and entropy suspects. Invalid checksums/dates, separators, versions, and key boundaries remain covered.
+- Decoder tests cover base64 adjacent to `=`, nested base64, JWT claims, custom values inside encoded text, base64/gzip HAR bodies, decoding off, excessive depth, and compressed bombs. Oversized/invalid binary HAR content is omitted with explicit notes.
+- Policy tests cover defaults/overrides, automatic CLI discovery, explicit paths, opt-out, field-scoped rules, exceptions that cannot spread across fields, invalid regexes/keys/tags/aliases, and UTF-8 byte limits. Regexes use RE2/J. Policy content is excluded from exports.
+- Self-check tests cover disabled/allowlisted matches, unexpected boundary-joined credentials, no original values or review IDs in check metadata, and strict exit codes. Source values that resemble generated placeholders cannot bypass redaction.
+- Browser-checked **Security sample**: Standard masks known tokens/keys and encoded email; Paranoid also masks card/IBAN/PESEL/entropy examples. The example policy hides TEAM-ALPHA, intentionally retains the synthetic public contact, and changes the scoped self-check to 1 remaining match.
+- Browser-checked body inclusion: decoded response JSON contains a redacted email and no base64 container; request API key/payload are masked. Decoder off displays **Limited check**. Clearing a policy restores standard/on defaults; reapplying honors policy defaults.
+- Review rows show detector reasons, decoded locations, and policy-allowlisted status. Export dialog carries the scoped self-check warning. Downloaded the actual HTML and inspected it: only the intentional public contact remains; token/card/IBAN/PESEL/private-key originals and policy content are absent.
+- Clear session removes rendered originals and policy status and resets the profile; checked the DOM no longer contains the demo's original private email. Browser captured no warnings/errors. Checked 469 px containment and 1366 px desktop; viewport override reset.
+- Stopped the owned local preview server after verification. The release ZIP includes the example YAML policy and updated CLI instructions.
+
+Screenshots: [Tier 2 workspace](tier-2-workspace.png), [narrow policy controls](tier-2-mobile.png). Detector/policy/decoder/self-check limits and references: [redaction guide](redaction.md).
+
+No detector or zero-match badge guarantees that all sensitive information is gone. Paranoid mode can flag harmless tokens. Unsupported encodings, unknown embedded secrets, omitted/truncated evidence, and shared detector blind spots remain review limits. The recorded counts above come from local Java 17 verification; GitHub workflow outcomes are tracked in Actions. No live incident or real provider credential was used.

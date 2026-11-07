@@ -16,14 +16,18 @@ public class IncidentService {
         if(input.har()==null || input.har().isBlank()) throw new IllegalArgumentException("Choose a HAR file first.");
         if(input.har().length()>12_000_000 || (input.logs()!=null && input.logs().length()>12_000_000)) throw new IllegalArgumentException("Each input must be smaller than 12 MB of text.");
         List<String> warnings=new ArrayList<>();
-        var requests=harParser.parse(input.har(),input.includeBodies(),warnings);
+        var policy=RedactionPolicy.fromYaml(input.policyYaml());
+        String profile=input.profile()==null?policy.defaultProfile():RedactionPolicy.profile(input.profile());
+        boolean decode=input.decodeContent()==null?policy.decodeContent():input.decodeContent();
+        var parsedHar=harParser.parseDecoded(input.har(),input.includeBodies(),decode,warnings);
+        var requests=parsedHar.entries();
         var parsedLogs=logParser.parseDetected(input.logs(),warnings);
         var logs=parsedLogs.entries();
         requests=correlator.correlate(requests,logs,warnings);
         var correlation=CorrelationInsights.review(requests,logs,parsedLogs.formats(),input.timestampHints(),warnings);
         Set<String> linked=new HashSet<>(); requests.forEach(r->linked.addAll(r.logIds()));
         String title=input.title()==null || input.title().isBlank()?"Untitled incident":input.title().strip();
-        Redactor redactor=new Redactor(mapper,input.enabledCategories(),input.customValues(),input.excludedFindingIds(),input.redactFindingIds());
+        Redactor redactor=new Redactor(mapper,input.enabledCategories(),input.customValues(),input.excludedFindingIds(),input.redactFindingIds(),policy,profile,decode);
         var cleanRequests=redactor.discoverAndRedactRequests(requests,logs,title);
         var cleanLogs=redactor.redactLogs(logs);
         String cleanTitle=redactor.title(title);
@@ -36,7 +40,15 @@ public class IncidentService {
         int ambiguousKept=(int)findings.stream().filter(f->f.ambiguousKeptOccurrences()>0).count();
         int forced=(int)findings.stream().filter(FindingReview::forced).count();
         if(ambiguousKept>0) warnings.add(ambiguousKept+" address values have ambiguous occurrences kept by automatic rules. Inspect them in Redactions and choose Redact all occurrences if they are addresses.");
-        var incident=new Incident("1.3",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced,correlation);
+        var check=RedactionSelfCheck.inspect(mapper,cleanRequests,cleanLogs,cleanTitle,policy,profile,decode,input.customValues(),findings);
+        boolean limited=parsedHar.scanLimited() || redactor.scanLimited();
+        if(limited) warnings.add("Decoded-content scanning reached a size, depth, or work limit. Review opaque values; the self-check cannot certify uninspected content.");
+        if(!decode) warnings.add("Decoded-content scanning is disabled. Base64/JWT claims/compressed content may contain uninspected data.");
+        if(check.remainingValues()>0) warnings.add("Export self-check found "+check.remainingValues()+" remaining pattern/known-value matches in included evidence, including any intentionally kept or allowlisted values. Review before sharing.");
+        if(!check.completed()) warnings.add("Export self-check did not finish all checks within its bounds. Treat its count as incomplete.");
+        var security=new SecurityReview(profile,decode,policy.applied(),policy.ruleCount(),policy.allowlistCount(),
+            parsedHar.decodedValues()+redactor.decodedValues(),parsedHar.decodedSkipped()+redactor.decodedSkipped(),limited,check);
+        var incident=new Incident("1.4",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced,correlation,security);
         return new Analysis(incident,(int)requests.stream().filter(r->r.status()==0 || r.status()>=400).count(),
             (int)requests.stream().filter(r->!r.logIds().isEmpty()).count(),(int)logs.stream().filter(l->!linked.contains(l.id())).count(),
             redactor.totalRedactions(),findings);

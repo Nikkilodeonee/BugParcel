@@ -111,4 +111,36 @@ class IncidentApiTest {
         mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(new byte[28_000_001])).andExpect(status().isPayloadTooLarge());
         mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content("{\"har\":\"{}\",\"mystery\":true}")).andExpect(status().isBadRequest());
     }
+    @Test void tierTwoProfilesPoliciesAndSelfCheckReachAllApiExports()throws Exception {
+        var source=(com.fasterxml.jackson.databind.node.ObjectNode)mapper.readTree(input());
+        source.put("logs","{\"message\":\"card 4111111111111111 person@example.test payload=cGVyc29uQGV4YW1wbGUudGVzdA== TEAM-ALPHA\"}");
+        source.put("policyYaml","version: 1\ndefaultProfile: paranoid\nrules:\n - id: team-label\n   pattern: 'TEAM-[A-Z]{5}'\n");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.incident.security.profile").value("paranoid"))
+            .andExpect(jsonPath("$.incident.security.policyApplied").value(true))
+            .andExpect(jsonPath("$.incident.security.selfCheck.remainingValues").value(0));
+        for(String format:new String[]{"html","markdown","json"}) {
+            String report=mvc.perform(post("/api/export/"+format).contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertThat(report).doesNotContain("4111111111111111","person@example.test","cGVyc29uQGV4YW1wbGUudGVzdA==","TEAM-ALPHA","team-label","pattern:")
+                .contains("REDACTED_CARD","REDACTED_POLICY");
+        }
+        source.put("policyYaml","version: 1\nrules: [{id: bad, pattern: '(?<=hidden-policy-value).*'}]");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString()))
+            .andExpect(status().isBadRequest()).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("hidden-policy-value"))));
+        source.remove("policyYaml");source.put("profile","unknown");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString())).andExpect(status().isBadRequest());
+    }
+    @Test void syntheticSecurityDemoAndExamplePolicyAreReviewable()throws Exception {
+        var sample=mapper.readTree(mvc.perform(get("/api/sample/security")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var input=mapper.createObjectNode().put("har",sample.path("har").asText()).put("logs",sample.path("logs").asText())
+            .put("policyYaml",sample.path("policyYaml").asText()).put("title","Synthetic").put("includeBodies",true);
+        var result=mapper.readTree(mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(input.toString()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.matchedRequests").value(1)).andExpect(jsonPath("$.incident.security.profile").value("paranoid"))
+            .andReturn().getResponse().getContentAsString());
+        assertThat(result.path("incident").path("security").path("selfCheck").path("remainingValues").asInt()).isOne();
+        assertThat(result.path("incident").path("security").path("selfCheck").path("issues").get(0).path("intentionallyKept").asBoolean()).isTrue();
+        String exported=mvc.perform(post("/api/export/html").contentType(MediaType.APPLICATION_JSON).content(input.toString())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(exported).contains("public@example.test","remaining pattern/known-value matches").doesNotContain("person@example.test","SYNTHETIC-NONKEY-DATA","TEAM-ALPHA");
+    }
 }

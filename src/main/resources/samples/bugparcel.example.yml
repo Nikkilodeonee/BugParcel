@@ -1,0 +1,14 @@
+# Synthetic example. Copy to ./bugparcel.yml for automatic CLI loading.
+version: 1
+defaultProfile: paranoid
+decodeContent: true
+rules:
+  - id: team-label
+    pattern: 'TEAM-[A-Z]{5}'
+    fields: ['log-* message']
+  - id: customer-id
+    pattern: 'CUST-[0-9]{6}'
+    fields: ['* request body/customerId']
+allowlists:
+  - values: ['public@example.test']
+    fields: ['log-* message']

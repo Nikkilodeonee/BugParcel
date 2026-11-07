@@ -3,6 +3,7 @@
 *.iml
 /.cache/
 /artifacts/
+/.jqwik-database
 /.env
 *.har
 *.log

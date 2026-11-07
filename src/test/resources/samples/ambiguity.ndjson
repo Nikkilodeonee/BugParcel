@@ -1,0 +1,6 @@
+{"timestamp":"2026-11-07T14:32:00Z","level":"INFO","requestId":"ambiguity-001","message":"Failed to build 10.0.0.12 image"}
+{"timestamp":"2026-11-07T14:32:01Z","level":"INFO","requestId":"ambiguity-001","message":"Using release 10.1.2.3 now"}
+{"timestamp":"2026-11-07T14:32:02Z","level":"ERROR","requestId":"ambiguity-001","message":"2026-11-07 ERROR :: Payment failed"}
+{"timestamp":"2026-11-07T14:32:03Z","level":"INFO","requestId":"ambiguity-001","message":"sequence=10:20:30:40:50:60:70:80 peer=2001:db8::42"}
+{"timestamp":"2026-11-07T14:32:04Z","level":"WARN","requestId":"ambiguity-001","message":"tel=2026-11-07 14:32 retry"}
+{"timestamp":"2026-11-07T14:32:05Z","level":"INFO","requestId":"ambiguity-001","message":"version=9.8.7.6"}

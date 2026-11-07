@@ -1,0 +1,9 @@
+target
+.git
+.idea
+.cache
+artifacts
+*.har
+*.log
+!src/main/resources/samples/*.har
+!src/test/resources/samples/*.har

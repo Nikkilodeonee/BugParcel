@@ -1,0 +1,29 @@
+name: Build and verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check src/main/resources/static/app.js
+      - run: mvn -B verify
+      - name: Command-line smoke test
+        run: |
+          java -jar target/bugparcel-1.0.0.jar sample --dir "$RUNNER_TEMP/sample"
+          java -jar target/bugparcel-1.0.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
+          test -s "$RUNNER_TEMP/report.html"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bugparcel-jar
+          path: target/bugparcel-1.0.0.jar
+          retention-days: 14

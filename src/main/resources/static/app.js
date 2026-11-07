@@ -90,11 +90,11 @@ function render() {
   if(document.activeElement!==$('#incident-title'))$('#incident-title').value=state.title;
   $('#incident-meta').textContent=`${incident.requests.length} requests · ${incident.logs.length} log entries`;
   $('#stats').innerHTML=[
-    ['Browser requests',incident.requests.length,'From the browser recording','pulse',''],
-    ['Failed requests',result.failedRequests,'HTTP errors & network failures','alert','error'],
-    ['Linked requests',result.matchedRequests,'Connected by a shared identifier','link','blue'],
-    ['Values redacted',result.redactedOccurrences,'Consistent across the evidence','shield','redact']
-  ].map(([label,value,note,symbol,color])=>`<div class="stat-card"><div class="stat-top"><span>${label}</span>${icon(symbol)}</div><div class="stat-value ${color}">${value}</div><div class="stat-bottom">${note}</div></div>`).join('');
+    ['requests',incident.requests.length,'From the browser recording',''],
+    ['failed',result.failedRequests,'HTTP errors and network failures',result.failedRequests?'error':''],
+    ['linked to logs',result.matchedRequests,'Connected by a shared identifier','blue'],
+    ['values redacted',result.redactedOccurrences,'Consistent across the evidence','']
+  ].map(([label,value,note,color])=>`<div class="stat ${color}" title="${escape(note)}"><b>${value}</b><span>${label}</span></div>`).join('');
   $('#requests-count').textContent=incident.requests.length;$('#logs-count').textContent=incident.logs.length;$('#redactions-count').textContent=result.redactedOccurrences;
   renderTabs();renderRequests();renderLogs();renderRedactions();
   $('#notes-label').textContent=`Analysis notes${incident.warnings.length?` · ${incident.warnings.length}`:''}`;
@@ -108,7 +108,7 @@ function renderRequests() {
   if(!state.analysis)return;
   const all=state.analysis.incident.requests;
   const rows=all.filter(r=>(state.filter==='all'||(state.filter==='failed'?failure(r):!r.logIds.length))&&`${r.method} ${r.url} ${r.status} ${Object.values(r.correlationIds).join(' ')}`.toLowerCase().includes(state.search.toLowerCase()));
-  $('#visible-count').textContent=`${rows.length} OF ${all.length}`;
+  $('#visible-count').textContent=`${rows.length} of ${all.length}`;
   $$('[data-filter]').forEach(b=>{b.classList.toggle('selected',b.dataset.filter===state.filter);b.setAttribute('aria-pressed',b.dataset.filter===state.filter);});
   if(rows.length&&!rows.some(r=>r.id===state.selected))state.selected=rows[0].id;
   $('#request-rows').innerHTML=rows.length?rows.map(r=>{const parts=urlParts(r.url);return `<tr class="${r.id===state.selected?'selected':''}"><td><button class="request-button" data-request="${escape(r.id)}" aria-label="Inspect ${escape(r.method)} ${escape(parts.path)}" aria-pressed="${r.id===state.selected}"><span class="request-primary">${method(r)}<span class="request-path" title="${escape(r.url)}">${escape(parts.path)}</span></span><span class="request-host">${escape(parts.host)}</span></button></td><td>${status(r)}</td><td><span class="duration ${r.durationMs>=1000?'slow':''}">${duration(r.durationMs)}</span></td><td><span class="link-count ${r.logIds.length?'':'zero'}" title="${r.logIds.length} linked log entries">${icon('link')}${r.logIds.length||'—'}</span></td></tr>`;}).join(''):'<tr><td colspan="4"><div class="no-results">No requests match this view.<br>Try another filter or search.</div></td></tr>';
@@ -128,14 +128,14 @@ function renderDetail(request) {
     content=`<div class="match-banner ${kind==='unmatched'?'unmatched':kind.startsWith('shared')?'shared':''}">${icon(kind==='unmatched'?'help':'link')}<span>${escape(matchLabels[kind]||kind)}${logs.length?` · ${logs.length} log ${logs.length===1?'entry':'entries'}`:''}</span></div><div class="correlation-chip">${Object.entries(r.correlationIds).map(([key,value])=>`<span>${escape(key)}: ${replacements(value)}</span>`).join('')}</div>`;
     if(Object.values(r.correlationIds).some(value=>value.includes('[REDACTED_')))content+='<p class="detail-note">Displayed IDs are redacted. These links were matched using the original IDs before redaction.</p>';
     if(kind.startsWith('shared'))content+='<p class="detail-note">This identifier is shared by multiple requests. These logs describe shared context, not an exclusive match.</p>';
-    content+=logs.length?`<h3 class="mini-heading">LINKED SERVER EVIDENCE</h3>${logs.map(renderLogCard).join('')}`:`<div class="empty-evidence">${icon('link')}${state.logs?'No log entries share a supported identifier with this request.':'Add server logs to connect the other side of this request.'}<br><span class="detail-note">Time alone is not treated as proof.</span></div>`;
-  }else if(state.detailTab==='headers')content=`<h3 class="mini-heading">REQUEST HEADERS</h3>${headerTable(r.requestHeaders)}<h3 class="mini-heading">RESPONSE HEADERS</h3>${headerTable(r.responseHeaders)}`;
-  else content=state.includeBodies?`<h3 class="mini-heading">REQUEST BODY</h3>${r.requestBody?`<pre class="body-code">${replacements(r.requestBody)}</pre>`:'<p class="detail-note">No text request body recorded.</p>'}<h3 class="mini-heading">RESPONSE BODY</h3>${r.responseBody?`<pre class="body-code">${replacements(r.responseBody)}</pre>`:'<p class="detail-note">No supported text response body recorded.</p>'}`:`<div class="empty-evidence">${icon('shield')}Bodies are excluded from this report.<br><button class="text-button" data-action="redactions">Manage in Redactions ${icon('arrow')}</button></div>`;
-  panel.innerHTML=`<div class="detail-header"><div class="detail-eyebrow">REQUEST DETAILS<span>${escape(r.id.toUpperCase())}</span></div><div class="detail-path">${method(r)}${escape(parts.path)}</div><div class="detail-meta">${status(r)}<span>${escape(r.statusText)}</span><span>·</span><span>${duration(r.durationMs)}</span><span>·</span><span>${escape(time(r.timestamp))}</span></div></div><div class="detail-nav" aria-label="Request detail view">${[['evidence','Evidence'],['headers','Headers'],['bodies','Bodies']].map(([key,label])=>`<button class="${state.detailTab===key?'active':''}" data-detail="${key}" aria-pressed="${state.detailTab===key}">${label}</button>`).join('')}</div><div class="detail-content">${content}</div>`;
+    content+=logs.length?`<h3 class="mini-heading">Linked server logs</h3>${logs.map(renderLogCard).join('')}`:`<div class="empty-evidence">${icon('link')}${state.logs?'No log entries share a supported identifier with this request.':'Add server logs to connect the other side of this request.'}<br><span class="detail-note">Time alone is not treated as proof.</span></div>`;
+  }else if(state.detailTab==='headers')content=`<h3 class="mini-heading">Request headers</h3>${headerTable(r.requestHeaders)}<h3 class="mini-heading">Response headers</h3>${headerTable(r.responseHeaders)}`;
+  else content=state.includeBodies?`<h3 class="mini-heading">Request body</h3>${r.requestBody?`<pre class="body-code">${replacements(r.requestBody)}</pre>`:'<p class="detail-note">No text request body recorded.</p>'}<h3 class="mini-heading">Response body</h3>${r.responseBody?`<pre class="body-code">${replacements(r.responseBody)}</pre>`:'<p class="detail-note">No supported text response body recorded.</p>'}`:`<div class="empty-evidence">${icon('shield')}Bodies are excluded from this report.<br><button class="text-button" data-action="redactions">Manage in Redactions ${icon('arrow')}</button></div>`;
+  panel.innerHTML=`<div class="detail-header"><div class="detail-eyebrow">Request details<span>${escape(r.id)}</span></div><div class="detail-path">${method(r)}${escape(parts.path)}</div><div class="detail-meta">${status(r)}<span>${escape(r.statusText)}</span><span>·</span><span>${duration(r.durationMs)}</span><span>·</span><span>${escape(time(r.timestamp))}</span></div></div><div class="detail-nav" aria-label="Request detail view">${[['evidence','Evidence'],['headers','Headers'],['bodies','Bodies']].map(([key,label])=>`<button class="${state.detailTab===key?'active':''}" data-detail="${key}" aria-pressed="${state.detailTab===key}">${label}</button>`).join('')}</div><div class="detail-content">${content}</div>`;
 }
 function renderLogs() {
   const incident=state.analysis?.incident;if(!incident)return;
-  $('#unmatched-log-count').textContent=`${state.analysis.unmatchedLogs} UNLINKED`;
+  $('#unmatched-log-count').textContent=`${state.analysis.unmatchedLogs} unlinked`;
   $$('[data-log-filter]').forEach(b=>{b.classList.toggle('selected',b.dataset.logFilter===state.logFilter);b.setAttribute('aria-pressed',b.dataset.logFilter===state.logFilter);});
   const linked=new Set(incident.requests.flatMap(r=>r.logIds));
   const logs=incident.logs.filter(l=>(state.logFilter==='all'||(state.logFilter==='unmatched'?!linked.has(l.id):state.logFilter==='ERROR'?['ERROR','FATAL'].includes(l.level):l.level===state.logFilter))&&`${l.message} ${l.logger} ${l.stackTrace} ${Object.values(l.correlationIds).join(' ')}`.toLowerCase().includes(state.logSearch.toLowerCase()));

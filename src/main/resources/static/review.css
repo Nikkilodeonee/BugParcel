@@ -1,28 +1,28 @@
-/* Value review: the customs inspection table. */
-.value-review{margin-top:26px}
-.review-description{max-width:980px;margin:0;padding:16px 20px;font-size:14px;line-height:1.6;color:var(--ink-2)}
-.value-review .network-toolbar{border-top:1px dashed var(--ink)}
+/* Value review: a plain table of every detected value. */
+.value-review{margin-top:20px}
+.review-description{max-width:980px;margin:0;padding:14px 18px;font-size:13.5px;line-height:1.6;color:var(--text-3)}
+.value-review .network-toolbar{border-top:1px solid var(--line)}
 .value-review .search-field{max-width:420px}
 .value-review .small-label{margin-left:auto}
 .review-table-wrap{overflow:auto}
 .review-table{width:100%;min-width:780px;border-collapse:collapse;text-align:left;table-layout:fixed;font-size:14px}
-.review-table th{padding:10px 16px;background:var(--paper);border-block:2px solid var(--ink);font:700 10px var(--mono);letter-spacing:.12em;color:var(--faint)}
-.review-table td{padding:16px;border-bottom:1px dashed var(--hair);vertical-align:top;overflow-wrap:anywhere}
+.review-table th{padding:8px 16px;background:var(--surface-2);border-bottom:1px solid var(--line);font-size:12px;font-weight:600;color:var(--text-3)}
+.review-table td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
 .review-table tr:last-child td{border-bottom:0}
 .review-table th:first-child{width:20%}.review-table th:nth-child(2){width:38%}.review-table th:nth-child(3){width:15%}
-.review-table select{width:100%;padding:7px 5px;border:2px solid var(--ink);border-radius:0;background:#fff;font:700 12px var(--mono)}
-.finding-placeholder{background:var(--ink);color:var(--kraft);padding:1px 7px;font:12px var(--mono)}
-.finding-original{margin-top:10px}
-.finding-original summary,.finding-locations summary{cursor:pointer;font:700 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;text-underline-offset:3px}
-.finding-original>code{display:block;max-height:180px;overflow:auto;margin:10px 0;padding:10px;border:2px dashed var(--red);background:var(--red-bg);font:12px/1.7 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
-.finding-state{display:block;margin-top:10px;font:12px/1.6 var(--mono);color:var(--ink-2)}
-.finding-state.kept{display:inline-block;background:var(--tape);color:var(--ink);padding:1px 7px;font-weight:700}
-.finding-categories{font:700 11px/1.8 var(--mono);letter-spacing:.04em}
-.finding-locations ul{margin:8px 0 0;padding-left:18px;font:12px/1.7 var(--mono);color:var(--ink-2)}
-.finding-ambiguity{margin-top:10px;padding:8px 10px;border:2px solid var(--ink);background:var(--tape-bg);font-size:13px;line-height:1.55}
-.finding-ambiguity summary{cursor:pointer;font:700 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.review-table select{width:100%;min-height:34px;padding:0 6px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);font-size:13.5px;font-weight:500}
+.finding-placeholder{background:var(--redact-bg);color:var(--redact-fg);border-radius:3px;padding:1px 7px;font:12px var(--mono)}
+.finding-original{margin-top:8px}
+.finding-original summary,.finding-locations summary{cursor:pointer;font-size:13px;font-weight:550;color:var(--accent)}
+.finding-original>code{display:block;max-height:180px;overflow:auto;margin:8px 0;padding:10px;border:1px solid var(--danger-line);border-radius:var(--radius-sm);background:var(--danger-bg);font:12px/1.7 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.finding-state{display:block;margin-top:8px;font-size:13px;line-height:1.6;color:var(--text-3)}
+.finding-state.kept{display:inline-block;background:var(--warn-bg);color:var(--warn);border-radius:4px;padding:0 8px;font-weight:600}
+.finding-categories{font:600 11.5px/1.8 var(--mono);color:var(--text-2)}
+.finding-locations ul{margin:8px 0 0;padding-left:18px;font:12px/1.7 var(--mono);color:var(--text-2)}
+.finding-ambiguity{margin-top:8px;padding:8px 12px;border:1px solid var(--warn-line);border-radius:var(--radius-sm);background:var(--warn-bg);font-size:13px;line-height:1.55}
+.finding-ambiguity summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--warn)}
 .finding-ambiguity p{margin:8px 0 0;font-size:13px}.finding-ambiguity ul{margin:8px 0 0;padding-left:18px}
-.review-pagination{display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:14px 20px;border-top:2px solid var(--ink);background:var(--paper)}
+.review-pagination{display:flex;align-items:center;justify-content:flex-end;gap:16px;padding:12px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
 .review-pagination .small-label{margin-left:0}
 .value-review details:focus-within{outline-offset:2px}
 @media(max-width:640px){

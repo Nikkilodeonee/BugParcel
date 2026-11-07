@@ -324,7 +324,7 @@ The browser request must contain the same ID for correlation to work. BugParcel 
 
 Standard now detects AWS/GitHub/Stripe/Slack tokens, JWTs, private-key blocks, URL credentials, and the existing PII patterns. **Paranoid** adds high-entropy suspects, Luhn-checked card numbers, IBANs, and PESEL IDs. Select the profile above the workspace, or use `--paranoid` in the CLI. The **Security sample** demonstrates the new detectors using synthetic data.
 
-Bounded base64/JWT-claims/gzip inspection defaults on. Sensitive encoded containers become placeholders; supported encoded HAR text bodies are decoded and scanned when bodies are included. The export self-check rescans included evidence, flags remaining matches and incomplete checks, and reports intentional exceptions. A zero count is scoped to known patterns and the selected profile; it is not a guarantee of complete removal.
+Bounded base64/JWT-claims/gzip inspection defaults on. Sensitive encoded containers become placeholders; supported encoded HAR text bodies are decoded and scanned when bodies are included. The export self-check rescans included evidence, flags remaining matches and incomplete checks, and reports intentional exceptions. **It is a second opinion, not a guarantee:** it reuses the same detectors, so it shares their blind spots. A zero count is scoped to known patterns and the selected profile, and you should still read the report before sharing it.
 
 The CLI auto-loads `./bugparcel.yml`; the UI lets you import it under Redactions. Example:
 
@@ -349,7 +349,7 @@ bugparcel review checkout.har --logs app.log --no-policy --no-decode
 
 Policy regexes use RE2/J, with bounded safe YAML and field-scoped exceptions. [Full policy schema, detector references, decoder limits, precedence, and self-check scope](docs/redaction.md). [Example policy](src/main/resources/samples/bugparcel.example.yml).
 
-The **57-case synthetic corpus** currently measures **100% precision / 100% recall (32 TP, 0 FP, 0 FN)** for its labeled automatic decisions; **350 generated property cases** exercise known-value removal from HTML/Markdown/JSON and link preservation. These figures describe the fixtures, not real-world performance. CI generates and publishes the corpus metrics.
+A **77-case regression corpus** (35 must-not-redact, 20 adversarial cases added after real gaps were found) guards the detectors, with results reported **per category** in CI. All gated cases pass, and two known limitations are listed openly: millisecond timestamps that happen to pass the Luhn check can be redacted as cards, and unlabeled personal names are not detected. **350 generated property cases** check that known values never reach HTML/Markdown/JSON exports and that links survive redaction. I wrote both the cases and the detectors, so these numbers are a regression guard, not a real-world accuracy estimate. The entropy detector in particular has only been tried on synthetic strings and the sample incidents.
 
 ## Privacy and limits
 

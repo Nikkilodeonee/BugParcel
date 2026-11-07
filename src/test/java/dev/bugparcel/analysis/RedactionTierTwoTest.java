@@ -83,6 +83,38 @@ class RedactionTierTwoTest {
         assertThat(AdditionalDetectors.card("0000000000000000")).isFalse();
     }
 
+    @Test void cardsAreFoundNextToOtherNumbersWithoutAbsorbingThem() throws Exception {
+        assertThat(analyze("card=4111111111111111 2026-11-07","paranoid",null).incident().logs().get(0).message())
+            .isEqualTo("card=[REDACTED_CARD_1] 2026-11-07");
+        assertThat(analyze("2026-11-07 4111111111111111","paranoid",null).incident().logs().get(0).message())
+            .isEqualTo("2026-11-07 [REDACTED_CARD_1]");
+        assertThat(analyze("4111 1111 1111 1111 2026-11-07 14:32","paranoid",null).incident().logs().get(0).message())
+            .isEqualTo("[REDACTED_CARD_1] 2026-11-07 14:32");
+        var two=analyze("4111111111111111 and 5555555555554444","paranoid",null).incident().logs().get(0).message();
+        assertThat(two).contains("[REDACTED_CARD_1]","[REDACTED_CARD_2]").doesNotContain("4111111111111111","5555555555554444");
+        String groups="order 2026 11 07 12 34 56 78 90 12 34";
+        assertThat(analyze(groups,"paranoid",null).incident().logs().get(0).message()).isEqualTo(groups);
+    }
+
+    @Test void browserVersionNumbersAreNotAddressesButPathAddressesStillAre() throws Exception {
+        String agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/118.0.0.0 Safari/537.36";
+        assertThat(analyze(agent,"standard",null).incident().logs().get(0).message()).isEqualTo(agent);
+        assertThat(analyze("GET /hosts/10.0.0.12 failed","standard",null).incident().logs().get(0).message())
+            .isEqualTo("GET /hosts/[REDACTED_IP_1] failed");
+    }
+
+    @Test void entropyIgnoresPathsIntegrityHashesAndWordIdentifiersButNotRandomTokens() throws Exception {
+        for(String harmless:List.of("GET /api/v2/organizations/acme-corp-eu/projects/web-checkout-2026/deployments/latest",
+            "integrity=sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=","state ORDER_20261107_CHECKOUT_FAILED_PAYMENT_5",
+            "id 550e8400-e29b-41d4-a716-446655440000"))
+            assertThat(analyze(harmless,"paranoid",null).incident().logs().get(0).message()).isEqualTo(harmless);
+        assertThat(analyze("key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY","paranoid",null).incident().logs().get(0).message())
+            .isEqualTo("key [REDACTED_SUSPECT_1]");
+        // A random token that merely sits behind a URL path slash is still judged as its own segment.
+        assertThat(analyze("GET /v1/Zq8Lm2Xv9Tn4Bk7Rp3Wd6Hc1Jy5Fs0Ga","paranoid",null).incident().logs().get(0).message())
+            .isEqualTo("GET /v1/[REDACTED_SUSPECT_1]");
+    }
+
     @Test void spacedIbansStopAtCountryLengthAndLeaveFollowingText() throws Exception {
         var result=analyze("IBAN GB82 WEST 1234 5698 7654 32 done","paranoid",null);
         assertThat(result.incident().logs().get(0).message()).isEqualTo("IBAN [REDACTED_IBAN_1] done");

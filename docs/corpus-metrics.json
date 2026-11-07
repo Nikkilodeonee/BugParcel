@@ -1,10 +1,94 @@
 {
-  "scope" : "Synthetic automatic-redaction fixtures; not real-world accuracy or a security guarantee",
-  "cases" : 57,
-  "negativeCases" : 25,
-  "truePositives" : 32,
+  "scope" : "Hand-written synthetic regression fixtures; not real-world accuracy or a security guarantee",
+  "cases" : 77,
+  "negativeCases" : 35,
+  "adversarialCases" : 20,
+  "truePositives" : 43,
   "falsePositives" : 0,
   "falseNegatives" : 0,
   "precision" : 1.0,
-  "recall" : 1.0
+  "recall" : 1.0,
+  "byCategory" : {
+    "CARD" : {
+      "cases" : 14,
+      "truePositives" : 11,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "CREDENTIAL" : {
+      "cases" : 26,
+      "truePositives" : 18,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "EMAIL" : {
+      "cases" : 2,
+      "truePositives" : 2,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "IBAN" : {
+      "cases" : 4,
+      "truePositives" : 3,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "IP" : {
+      "cases" : 8,
+      "truePositives" : 3,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "NONE" : {
+      "cases" : 2,
+      "truePositives" : 0,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : null,
+      "recall" : null
+    },
+    "PESEL" : {
+      "cases" : 3,
+      "truePositives" : 1,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "PHONE" : {
+      "cases" : 4,
+      "truePositives" : 1,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    },
+    "SUSPECT" : {
+      "cases" : 14,
+      "truePositives" : 4,
+      "falsePositives" : 0,
+      "falseNegatives" : 0,
+      "precision" : 1.0,
+      "recall" : 1.0
+    }
+  },
+  "knownLimitations" : [ {
+    "id" : "limit-luhn-valid-epoch-millis",
+    "category" : "CARD",
+    "behavior" : "unexpected redaction"
+  }, {
+    "id" : "limit-unlabeled-person-name",
+    "category" : "NAME",
+    "behavior" : "missed redaction"
+  } ]
 }

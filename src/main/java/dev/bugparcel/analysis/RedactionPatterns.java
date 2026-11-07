@@ -25,6 +25,9 @@ final class RedactionPatterns {
     private static final Pattern VERSION_PREFIX = Pattern.compile(KEY_START
         + "(?:v|ver|version|semver|(?:x[-_.])?(?:app|api|service|software|application|product|build|release)[-_.]?version)"
         + "[\"']?\\s*[:=]\\s*[\"']?\\s*$");
+    /** Well-known product tokens ("Chrome/118.0.0.0") whose four-part numbers are versions, not addresses. */
+    private static final Pattern UA_PRODUCT_PREFIX = Pattern.compile(
+        "(?i)(?<![A-Za-z0-9_-])(?:chrome|chromium|safari|firefox|edg|edge|opr|applewebkit|gecko|crios|fxios|version|curl|okhttp|python-requests|go-http-client)/$");
     private static final Pattern ADDRESS_PREFIX = Pattern.compile(KEY_START
         + "(?:ip|ipv4|ipv6|address|host|peer|x[-_.]forwarded[-_.]for|x[-_.]real[-_.]ip|"
         + "(?:client|remote|source|destination|server|peer)[-_.]?(?:ip|address))"
@@ -36,7 +39,7 @@ final class RedactionPatterns {
         "(?:[0-9]{4}[-.][0-9]{2}[-.][0-9]{2}|[0-9]{2}[-.][0-9]{2}[-.][0-9]{4})(?:[ T].*)?");
     private static final Set<String> VERSION_KEYS = Set.of("v", "ver", "version", "semver", "appversion",
         "xappversion", "apiversion", "serviceversion", "softwareversion", "applicationversion",
-        "productversion", "buildversion", "releaseversion");
+        "productversion", "buildversion", "releaseversion", "useragent");
     private static final Set<String> ADDRESS_KEYS = Set.of("ip", "ipv4", "ipv6", "address", "host", "peer",
         "ipaddress", "clientip", "remoteip", "sourceip", "destinationip", "serverip", "peerip",
         "clientaddress", "remoteaddress", "sourceaddress", "destinationaddress", "serveraddress", "peeraddress",
@@ -69,7 +72,8 @@ final class RedactionPatterns {
     }
 
     static boolean versionContext(String value, int start) {
-        return VERSION_PREFIX.matcher(value.substring(Math.max(0, start - 100), start)).find();
+        String before = value.substring(Math.max(0, start - 100), start);
+        return VERSION_PREFIX.matcher(before).find() || UA_PRODUCT_PREFIX.matcher(before).find();
     }
 
     static String ipAmbiguity(String address, String value, int start, int end,

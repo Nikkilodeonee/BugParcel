@@ -18,6 +18,8 @@ final class AdditionalDetectors {
     static final Pattern JWT = Pattern.compile("(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{2,}\\.[A-Za-z0-9_-]*(?![A-Za-z0-9_.-])");
     private static final Pattern PRIVATE_START = Pattern.compile("-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----");
     private static final Pattern NUMBERS = Pattern.compile("(?<![A-Za-z0-9_])[0-9][0-9 -]*[0-9](?![A-Za-z0-9_])");
+    private static final Pattern SRI_HASH = Pattern.compile("^sha(?:256|384|512)-");
+    private static final Pattern WORD_PART = Pattern.compile("[A-Z]+|[a-z]+|[0-9]+|[A-Z][a-z]+");
     private static final Pattern PESEL = Pattern.compile("(?<![A-Za-z0-9_])[0-9]{11}(?![A-Za-z0-9_])");
     private static final Pattern IBAN_START = Pattern.compile("(?<![A-Za-z0-9_])[A-Z]{2}[0-9]{2}");
     private static final Pattern ENTROPY = Pattern.compile("(?<![A-Za-z0-9_+/=-])[A-Za-z0-9_+/-]{24,256}={0,2}(?![A-Za-z0-9_+/=-])");
@@ -48,11 +50,7 @@ final class AdditionalDetectors {
             consumed = end;
         }
         if (!paranoid) return hits;
-        var numbers = NUMBERS.matcher(value);
-        while (numbers.find()) {
-            String candidate = numbers.group().stripTrailing();
-            if (card(candidate)) hits.add(new Hit("CARD", candidate, numbers.start(), numbers.start() + candidate.length(), "Card number (Luhn checksum)"));
-        }
+        cards(value, hits);
         var pesel = PESEL.matcher(value);
         while (pesel.find()) if (pesel(pesel.group())) hits.add(new Hit("PESEL", pesel.group(), pesel.start(), pesel.end(), "PESEL (date and checksum)"));
         var ibans = IBAN_START.matcher(value);
@@ -73,13 +71,74 @@ final class AdditionalDetectors {
         }
         if (!knownIdentifierField) {
             var tokens = ENTROPY.matcher(value);
-            while (tokens.find()) {
-                String candidate = tokens.group();
-                if (entropy(candidate) >= 4.3 && candidate.chars().anyMatch(Character::isLetter) && candidate.chars().anyMatch(Character::isDigit))
-                    hits.add(new Hit("SUSPECT", candidate, tokens.start(), tokens.end(), "High-entropy suspect (heuristic, may be harmless)"));
-            }
+            while (tokens.find()) suspect(hits, tokens.group(), tokens.start());
         }
         return hits;
+    }
+
+    /**
+     * Digit runs may contain several groups ("4111 1111 1111 1111 2026-11-07"). Test every window of 13-19 digits whose
+     * groups are joined by exactly one space or dash, so a card is found even when other numbers follow it. A window must start
+     * with a group of at least four digits: real card formats (contiguous, 4-4-4-4, 4-6-5) always do, which keeps trailing or
+     * leading date fragments from being absorbed into a match.
+     */
+    private static void cards(String value, List<Hit> hits) {
+        var numbers = NUMBERS.matcher(value);
+        while (numbers.find()) {
+            String run = numbers.group();
+            List<int[]> groups = new ArrayList<>();
+            for (int i = 0; i < run.length(); ) {
+                if (run.charAt(i) < '0' || run.charAt(i) > '9') { i++; continue; }
+                int start = i;
+                while (i < run.length() && run.charAt(i) >= '0' && run.charAt(i) <= '9') i++;
+                groups.add(new int[]{start, i});
+            }
+            int first = 0;
+            while (first < groups.size()) {
+                int bestEnd = -1;
+                if (groups.get(first)[1] - groups.get(first)[0] >= 4) {
+                    int digits = 0;
+                    for (int last = first; last < groups.size(); last++) {
+                        if (last > first && groups.get(last)[0] - groups.get(last - 1)[1] != 1) break;
+                        digits += groups.get(last)[1] - groups.get(last)[0];
+                        if (digits > 19) break;
+                        if (digits >= 13 && card(run.substring(groups.get(first)[0], groups.get(last)[1]))) bestEnd = last;
+                    }
+                }
+                if (bestEnd < 0) { first++; continue; }
+                int from = groups.get(first)[0], to = groups.get(bestEnd)[1];
+                hits.add(new Hit("CARD", run.substring(from, to), numbers.start() + from, numbers.start() + to, "Card number (Luhn checksum)"));
+                first = bestEnd + 1;
+            }
+        }
+    }
+
+    /**
+     * Entropy is a weak signal, so common harmless shapes are excluded: URL path segments (judged one segment at a time),
+     * Subresource Integrity hashes, and identifiers made only of plain words/numbers joined by "-" or "_" such as
+     * ORDER_20261107_CHECKOUT_FAILED or web-checkout-2026.
+     */
+    private static void suspect(List<Hit> hits, String token, int offset) {
+        if (token.startsWith("/")) {
+            int start = 0;
+            for (int i = 0; i <= token.length(); i++) {
+                if (i == token.length() || token.charAt(i) == '/') {
+                    if (i - start >= 24) suspect(hits, token.substring(start, i), offset + start);
+                    start = i + 1;
+                }
+            }
+            return;
+        }
+        if (SRI_HASH.matcher(token).find() || wordLikeIdentifier(token)) return;
+        if (entropy(token) >= 4.3 && token.chars().anyMatch(Character::isLetter) && token.chars().anyMatch(Character::isDigit))
+            hits.add(new Hit("SUSPECT", token, offset, offset + token.length(), "High-entropy suspect (heuristic, may be harmless)"));
+    }
+
+    private static boolean wordLikeIdentifier(String token) {
+        String[] parts = token.split("[-_]", -1);
+        if (parts.length < 3) return false;
+        for (String part : parts) if (!WORD_PART.matcher(part).matches()) return false;
+        return true;
     }
 
     private static Rule rule(String name, String regex) {

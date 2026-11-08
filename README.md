@@ -8,11 +8,15 @@ A local Java 17 / Spring Boot application with a dependency-free browser interfa
 
 Imports and redaction stay on your machine. Optional CLI pull flags contact only the log source you specify; the browser and local API never fetch referenced URLs.
 
-![BugParcel incident workspace](docs/workspace.jpg)
+![BugParcel flow: load fictional evidence, connect logs, review redactions, inspect the timeline, compare a fix, and export HTML](docs/demo.gif)
+
+[Download 1.4.0](https://github.com/Nikkilodeonee/BugParcel/releases/tag/v1.4.0) · [Open a sample report without Java](https://github.com/Nikkilodeonee/BugParcel/releases/download/v1.4.0/sample-report.html)
+
+Download the sample HTML and open it in your browser. It is a self-contained, script-free report with fictional data; it works offline. The 18-second GIF above shows the actual app.
 
 ## Try it
 
-Requires **Java 17+** to run the packaged app. Building from source also requires **Maven 3.9+**.
+Requires **Java 17+** to run the packaged app. Get the [portable ZIP](https://github.com/Nikkilodeonee/BugParcel/releases/download/v1.4.0/BugParcel-1.4.0.zip), extract it, and follow `READ ME.txt`. [SHA-256 checksums](https://github.com/Nikkilodeonee/BugParcel/releases/download/v1.4.0/SHA256SUMS.txt) cover every release asset. Building from source also requires **Maven 3.9+**.
 
 ```sh
 mvn verify
@@ -104,7 +108,7 @@ newman run collection.json --reporters json --reporter-json-export run.json
 bugparcel report run.json --logs app.log -o incident.html
 ```
 
-Log files can be text, JSON arrays, NDJSON, `.gz`, or ZIP. Directory discovery skips symlinks, sorts/deduplicates inputs, and supports quoted globs on Windows and Unix. JSON-array and text files can be combined. Limits apply to file count, expansion, discovery, and total text; archives are read in memory without extraction. See [input formats, limits, and recipes](docs/inputs.md).
+Log files can be text, JSON arrays, NDJSON, `.gz`, or ZIP. Folder and ZIP scans also include rotated names such as `app.log.1` and `app.log.2026-11-07`. Directory discovery skips symlinks, sorts/deduplicates inputs, and supports quoted globs on Windows and Unix. JSON-array and text files can be combined. Limits apply to file count, expansion, discovery, and total text; archives are read in memory without extraction. See [input formats, limits, and recipes](docs/inputs.md).
 
 ```sh
 docker logs api 2>&1 | bugparcel report capture.har --logs - -o report.html

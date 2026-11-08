@@ -100,6 +100,24 @@ class InputTierFourTest {
         assertThatThrownBy(()->analyze("{\"info\":{},\"item\":[]}".getBytes(StandardCharsets.UTF_8),null,false)).hasMessageContaining("Unsupported capture");
         assertThatThrownBy(()->analyze(zip(Map.of("trace.network","{\"type\":\"unknown\"}".getBytes(StandardCharsets.UTF_8))),null,false)).hasMessageContaining("no supported network snapshots");
     }
+    @Test void rotatedLogsAreDiscoveredInDirectoriesAndArchives()throws Exception {
+        Files.createDirectories(temp.resolve("rotated"));
+        Files.writeString(temp.resolve("rotated/app.log.1"),"numbered");
+        Files.writeString(temp.resolve("rotated/app.log.2026-11-07"),"dated");
+        Files.write(temp.resolve("rotated/app.log.2.gz"),gzip("compressed".getBytes(StandardCharsets.UTF_8)));
+        Files.writeString(temp.resolve("rotated/app.log.backup"),"ignore");
+        var reader=new LogFileInputs(temp,mapper);
+        var files=reader.resolve(List.of("rotated"));
+        assertThat(files).hasSize(3);assertThat(reader.read(files)).containsExactlyInAnyOrder("numbered","dated","compressed");
+        var archived=new LogInputs(mapper).files(zip(Map.of("logs/app.log.1","one".getBytes(StandardCharsets.UTF_8),"logs/app.log.2026-11-07","two".getBytes(StandardCharsets.UTF_8))),new ArrayList<>());
+        assertThat(archived).containsExactlyInAnyOrder("one","two");
+        assertThat(reader.resolve(List.of("rotated/*.log.*"))).hasSize(3);
+    }
+    @Test void aDigitPrefixStillRequiresAValidNetstringRecord() {
+        byte[] invalid="2026-11-07 private-not-a-flow".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(()->analyze(invalid,null,false)).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("typed-netstring").hasMessageNotContaining("private-not-a-flow");
+    }
     @Test void encodedSourcesSurviveComparisonReanalysis()throws Exception {
         String source=Base64.getEncoder().encodeToString(sample("playwright-checkout.zip"));
         var input=new AnalysisInput(source,null,"Trace",null,List.of(),true,Set.of(),Set.of(),false,null,null,null,"paper","base64",null);

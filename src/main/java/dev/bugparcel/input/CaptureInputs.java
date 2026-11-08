@@ -21,7 +21,7 @@ public final class CaptureInputs {
             if (InputBytes.gzip(bytes)) throw InputBytes.invalid("Nested gzip captures are unsupported.");
         }
         if (InputBytes.zip(bytes)) return archive(bytes, bodies, notes);
-        if (bytes.length > 0 && bytes[0] >= '0' && bytes[0] <= '9') {
+        if (nativeFlow(bytes)) {
             return new CaptureAdapters(mapper).mitmproxy(bytes, bodies, notes);
         }
         return document(InputBytes.text(bytes), bodies, notes, Map.of(), "");
@@ -57,7 +57,7 @@ public final class CaptureInputs {
         String name = captures.get(0);
         byte[] content = files.get(name);
         if (InputBytes.zip(content) || InputBytes.gzip(content)) throw InputBytes.invalid("Nested capture archives are unsupported.");
-        if (content.length>0&&content[0]>='0'&&content[0]<='9') return new CaptureAdapters(mapper).mitmproxy(content, bodies, notes);
+        if (nativeFlow(content)) return new CaptureAdapters(mapper).mitmproxy(content, bodies, notes);
         return document(InputBytes.text(content), bodies, notes, files, name.contains("/") ? name.substring(0, name.lastIndexOf('/') + 1) : "");
     }
 
@@ -130,5 +130,9 @@ public final class CaptureInputs {
     static String stamp(double seconds) {
         if (!Double.isFinite(seconds) || seconds < 0 || seconds > 253402300799d) return "";
         return Instant.ofEpochMilli(Math.round(seconds * 1000)).toString();
+    }
+    private static boolean nativeFlow(byte[] bytes) {
+        // Native mitmproxy records begin with a decimal byte-length prefix; the netstring parser validates the rest.
+        return bytes.length>0&&bytes[0]>='0'&&bytes[0]<='9';
     }
 }

@@ -110,3 +110,11 @@ Screenshots: [timeline and brief](tier-3-workspace.png), [comparison with bodies
 - Stopped the owned loopback preview on port 8088 after verification. No live incident or real service credential was used.
 
 Screenshots: [input workspace](tier-4-workspace.png), [390 px workspace](tier-4-mobile.png), [input guide](tier-4-guide.png). Format fidelity, transport, retrieval, and resource limits: [input documentation](inputs.md).
+
+### 1.4.0 publication checks
+
+- Review fixes pass **183 tests on Java 17**, with zero failures/errors/skips, including the existing 350 generated jqwik cases. Added regressions cover numbered/date-rotated logs in folders, globs and ZIPs; an exact Loki result limit versus a real extra entry across streams; and a digit-prefixed invalid mitmproxy record with a clear error that excludes source content.
+- HTTP pulls reuse a lazy process-lifetime Java 17 client. Existing redirect, authorization, streaming byte-budget, and whole-response deadline tests remain green. The generated `bugparcel-sample/` folder is ignored.
+- Recorded six actual UI states using fictional sample data: import, linked payment logs, detected-value review, waterfall, before/after comparison, and HTML export. The looping [GIF](demo.gif) is 18 seconds and under 1 MB. No browser console warnings/errors were captured. The owned local preview is stopped after capture.
+- Generated the script-free [sample report](sample-report.html) on Java 17 with included bodies and strict checking. Source checks verify inline SVG, summary/timeline content, no scripts or external assets, and absence of the fictional token, private email, cookie and IP originals. These checks inspect the standalone file; they do not claim browser rendering of a local file.
+- Ran the release preparation script locally on Java 17. Verified all four SHA-256 entries, ZIP contents, matching ZIP/JAR bytes, LF/no-BOM checksum and shell files, and versioned instructions. Both PowerShell scripts and workflow YAML files parse; JavaScript syntax checks pass. The tag-triggered workflow independently builds and verifies release assets before publishing.

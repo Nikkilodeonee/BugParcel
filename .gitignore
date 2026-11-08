@@ -3,6 +3,7 @@
 *.iml
 /.cache/
 /artifacts/
+/bugparcel-sample/
 /.jqwik-database
 /.env
 *.har

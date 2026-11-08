@@ -79,7 +79,8 @@ public final class LogFileInputs {
         if (selected.size() > 200) throw new IllegalArgumentException("Use at most 200 log files.");
     }
     private static boolean supported(Path path) {
-        return path.getFileName().toString().toLowerCase(Locale.ROOT).matches(".*\\.(log|txt|ndjson|jsonl|json|out|err|gz|zip)$");
+        String name=path.getFileName().toString();
+        return LogInputs.supportedName(name)||name.toLowerCase(Locale.ROOT).endsWith(".zip");
     }
     private static int firstWildcard(String value) {
         int first = value.length();

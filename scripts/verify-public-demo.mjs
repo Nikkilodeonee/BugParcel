@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync('docs/sample-report.html','utf8');
+assert(html.startsWith('<!doctype html>'));
+for(const required of ['Content-Security-Policy','<svg','Incident summary','Request waterfall','Chronological evidence','REDACTED_CREDENTIAL','REDACTED_EMAIL'])assert(html.includes(required),`Sample report is missing ${required}`);
+assert(!/<script\b|<iframe\b|<foreignObject\b/i.test(html),'The public sample must remain script-free.');
+assert(!/<(?:img|link|script)\b[^>]*(?:src|href)\s*=\s*["']https?:/i.test(html),'The sample must open offline.');
+for(const secret of ['dev-only-token-not-a-real-secret','alex.morgan@example.test','10.24.8.16','demo-session-value'])assert(!html.includes(secret),`Unredacted synthetic secret in the public sample: ${secret}`);
+const gif=fs.readFileSync('docs/demo.gif');
+assert(['GIF87a','GIF89a'].includes(gif.subarray(0,6).toString('ascii')),'Demo must be a GIF.');
+assert(gif.length>1000&&gif.length<8_000_000,'Keep the README animation small.');
+assert.equal(gif.at(-1),0x3b,'The GIF must have a complete trailer.');
+console.log('Verified offline, script-free sample HTML and the public demo GIF.');

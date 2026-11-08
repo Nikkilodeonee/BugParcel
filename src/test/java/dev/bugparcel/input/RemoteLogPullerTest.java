@@ -48,6 +48,19 @@ class RemoteLogPullerTest {
         var logInputs=new LogInputs(mapper);var input=logInputs.read(logInputs.bundle(result.parts(),result),"bundle",new ArrayList<>());
         assertThat(input.limited()).isTrue();
     }
+    @Test void lokiLookaheadDistinguishesExactLimitsFromTruncatedResults() {
+        AtomicBoolean extra=new AtomicBoolean();AtomicReference<String> requested=new AtomicReference<>();
+        server.createContext("/loki/api/v1/query_range",e->{
+            requested.set(e.getRequestURI().getRawQuery());
+            String more=extra.get()?",{\"values\":[[\"1794061929000000000\",\"second\"]]}":"";
+            reply(e,200,"{\"status\":\"success\",\"data\":{\"resultType\":\"streams\",\"result\":[{\"values\":[[\"1794061928000000000\",\"first\"]]}"+more+"]}}");
+        });
+        var puller=new RemoteLogPuller(mapper);
+        var exact=puller.pull(query(RemoteLogPuller.Kind.LOKI,"id",1,null));
+        assertThat(requested.get()).contains("limit=2");assertThat(exact.limited()).isFalse();
+        extra.set(true);var truncated=puller.pull(query(RemoteLogPuller.Kind.LOKI,"id",1,null));
+        assertThat(truncated.limited()).isTrue();assertThat(truncated.parts().get(0)).contains("first").doesNotContain("second");
+    }
     @Test void rawUrlsAndFileUrlsAreBoundedAndNeverFollowRedirects()throws Exception {
         AtomicInteger target=new AtomicInteger();
         server.createContext("/logs",e->reply(e,200,"{\"message\":\"direct\"}"));

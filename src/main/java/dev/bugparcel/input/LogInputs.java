@@ -5,6 +5,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public final class LogInputs {
+    private static final java.util.regex.Pattern SUPPORTED_NAME = java.util.regex.Pattern.compile(
+        ".*\\.(?:log|txt|ndjson|jsonl|json|out|err|gz)$|.*\\.log\\.(?:[0-9]+|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+        java.util.regex.Pattern.CASE_INSENSITIVE);
     public record Result(String text, int files, boolean limited) {
         public Result(String text,int files) { this(text,files,false); }
     }
@@ -51,8 +54,7 @@ public final class LogInputs {
         int ignored = 0, expanded = 0;
         for (var entry : entries.entrySet()) {
             if(InputBytes.zip(entry.getValue()))throw InputBytes.invalid("Nested log ZIP archives are unsupported; unpack them locally first.");
-            String name = entry.getKey().toLowerCase(Locale.ROOT);
-            if (!name.matches(".*\\.(log|txt|ndjson|jsonl|json|out|err|gz)$")) { ignored++; continue; }
+            if (!supportedName(entry.getKey())) { ignored++; continue; }
             if (parts.size() >= MAX_FILES) throw InputBytes.invalid("Log archive has more than 200 supported files.");
             byte[] content = entry.getValue();
             if (InputBytes.gzip(content)) content = InputBytes.gunzip(content, InputBytes.MAX_TEXT - expanded);
@@ -62,7 +64,7 @@ public final class LogInputs {
             if (expanded > InputBytes.MAX_TEXT) throw InputBytes.invalid("Combined logs exceed 12 MB. Split the incident.");
             parts.add(text);
         }
-        if (parts.isEmpty()) throw InputBytes.invalid("ZIP contains no supported log files (.log, .txt, .ndjson, .jsonl, .json, .out, .err, .gz).");
+        if (parts.isEmpty()) throw InputBytes.invalid("ZIP contains no supported log files (.log, rotated .log.N/.log.YYYY-MM-DD, .txt, .ndjson, .jsonl, .json, .out, .err, .gz).");
         notes.add("Read " + parts.size() + " log files from ZIP in memory; " + ignored + " other files omitted.");
         merge(parts); // Enforce the aggregate limit, including gzip members.
         return List.copyOf(parts);
@@ -86,6 +88,7 @@ public final class LogInputs {
         if (text.getBytes(StandardCharsets.UTF_8).length > InputBytes.MAX_TEXT) throw InputBytes.invalid("Combined logs exceed 12 MB. Split the incident.");
         return new Result(text, parts.size());
     }
+    static boolean supportedName(String name) { return SUPPORTED_NAME.matcher(name).matches(); }
     public String bundle(List<String> parts) {
         merge(parts);
         try { return mapper.writeValueAsString(parts); }

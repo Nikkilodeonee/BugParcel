@@ -1,9 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$jarPath = Join-Path $projectRoot 'target\bugparcel-1.4.0.jar'
+$version = ([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'pom.xml') -Raw)).project.version
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Packaging requires a stable Maven version.' }
+$jarPath = Join-Path $projectRoot "target\bugparcel-$version.jar"
 if (-not (Test-Path -LiteralPath $jarPath)) { throw 'Run mvn verify before packaging.' }
 $artifactRoot = Join-Path $projectRoot 'artifacts'
-$releaseRoot = Join-Path $artifactRoot 'BugParcel-1.4.0'
+$releaseRoot = Join-Path $artifactRoot "BugParcel-$version"
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 Copy-Item -LiteralPath $jarPath -Destination (Join-Path $releaseRoot 'bugparcel.jar')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $releaseRoot
@@ -32,7 +34,7 @@ exec java -jar "$(dirname "$0")/bugparcel.jar" "$@"
 # LF line endings and no BOM so the script runs on macOS/Linux.
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'bugparcel'), ($cliSh -replace "`r`n", "`n") + "`n", (New-Object Text.UTF8Encoding $false))
 $instructions = @'
-BugParcel 1.4.0
+BugParcel {{VERSION}}
 
 Requires Java 17 or newer.
 
@@ -51,7 +53,7 @@ Command line (no server; local inputs unless explicit pull flags are used):
   bugparcel report bugparcel-sample\playwright-checkout.zip --logs bugparcel-sample\checkout-logs.zip -o report.html
   bugparcel report trace.zip --logs "logs/**/*.log.gz" -o report.html
   bugparcel help inputs
-Use bugparcel.cmd on Windows or ./bugparcel on macOS/Linux.
+Use bugparcel.cmd on Windows; run chmod +x bugparcel then ./bugparcel on macOS/Linux.
 Choose Security sample in the interface to try synthetic token/identifier redaction.
 Use --paranoid for checksum identifiers and entropy suspects.
 Copy bugparcel.example.yml to bugparcel.yml in your working directory for CLI policy auto-loading.
@@ -78,7 +80,9 @@ Source and full documentation are in the BugParcel project folder.
 Author: Roman Sushkin (https://github.com/Nikkilodeonee)
 MIT License.
 '@
-Set-Content -LiteralPath (Join-Path $releaseRoot 'READ ME.txt') -Value $instructions -Encoding Ascii
-Compress-Archive -LiteralPath $releaseRoot -DestinationPath (Join-Path $artifactRoot 'BugParcel-1.4.0.zip') -Force
-Get-FileHash -LiteralPath (Join-Path $artifactRoot 'BugParcel-1.4.0.zip') -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLowerInvariant() + '  BugParcel-1.4.0.zip' } | Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding Ascii
-Write-Host (Join-Path $artifactRoot 'BugParcel-1.4.0.zip')
+Set-Content -LiteralPath (Join-Path $releaseRoot 'READ ME.txt') -Value $instructions.Replace('{{VERSION}}',$version) -Encoding Ascii
+$zipPath = Join-Path $artifactRoot "BugParcel-$version.zip"
+Compress-Archive -LiteralPath $releaseRoot -DestinationPath $zipPath -Force
+$checksum = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant() + "  BugParcel-$version.zip`n"
+[IO.File]::WriteAllText((Join-Path $artifactRoot 'SHA256SUMS.txt'), $checksum, [Text.UTF8Encoding]::new($false))
+Write-Host $zipPath

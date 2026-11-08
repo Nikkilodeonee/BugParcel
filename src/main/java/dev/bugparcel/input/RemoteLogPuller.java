@@ -21,6 +21,11 @@ public final class RemoteLogPuller {
     public record Result(List<String> parts, String sourceKind, boolean limited) {}
     private final ObjectMapper mapper;
     private final Duration timeout;
+    private static final class SharedClient {
+        // Java 17 has no HttpClient.close(); reuse one lazy client for the process lifetime.
+        static final HttpClient INSTANCE=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20))
+            .followRedirects(HttpClient.Redirect.NEVER).build();
+    }
     public RemoteLogPuller(ObjectMapper mapper) { this(mapper, Duration.ofSeconds(20)); }
     RemoteLogPuller(ObjectMapper mapper, Duration timeout) { this.mapper = mapper; this.timeout = timeout; }
 
@@ -55,7 +60,7 @@ public final class RemoteLogPuller {
                 try { literal = mapper.writeValueAsString(options.requestId()); }
                 catch (Exception e) { throw invalid("Invalid request ID."); }
                 String query = options.selector().strip() + " |= " + literal;
-                request = HttpRequest.newBuilder(uri(base + "/loki/api/v1/query_range?query=" + encode(query) + "&start=" + encode(options.start().toString()) + "&end=" + encode(options.end().toString()) + "&direction=forward&limit=" + options.limit())).GET();
+                request = HttpRequest.newBuilder(uri(base + "/loki/api/v1/query_range?query=" + encode(query) + "&start=" + encode(options.start().toString()) + "&end=" + encode(options.end().toString()) + "&direction=forward&limit=" + (options.limit()+1))).GET();
             } else {
                 if (options.index() == null || !options.index().matches("[A-Za-z0-9._*,\\-]{1,128}") || options.idField() == null || !options.idField().matches("[A-Za-z0-9_@.\\-]{1,128}"))
                     throw invalid("Elasticsearch requires a valid index pattern and exact ID field name.");
@@ -91,7 +96,7 @@ public final class RemoteLogPuller {
             // Reuse envelope parsing for text/JSON lines; the stored Loki event time is the capture clock.
             lines.add(mapper.createObjectNode().put("log",pair.get(1).asText()).put("time",timestamp).put("stream","loki").toString());
         }
-        return new Result(List.of(String.join("\n",lines)),"Loki",lines.size() >= limit);
+        return new Result(List.of(String.join("\n",lines)),"Loki",false);
     }
     private Result elasticsearch(JsonNode root, int limit) {
         if (root == null || !root.path("hits").path("hits").isArray() || root.has("error")) throw invalid("Elasticsearch did not return search hits.");
@@ -111,9 +116,8 @@ public final class RemoteLogPuller {
     }
 
     private byte[] fetch(HttpRequest request) {
-        var client = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build();
         var body = new LimitedBody(InputBytes.MAX_FILE);
-        CompletableFuture<HttpResponse<byte[]>> pending = client.sendAsync(request, info -> body);
+        CompletableFuture<HttpResponse<byte[]>> pending = SharedClient.INSTANCE.sendAsync(request, info -> body);
         try {
             var response = pending.get(timeout.toMillis(),TimeUnit.MILLISECONDS);
             if (response.statusCode() < 200 || response.statusCode() >= 300) throw invalid("Log pull returned HTTP " + response.statusCode() + ". Redirects are not followed; service error bodies are not displayed.");

@@ -1,0 +1,73 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Match tag to project version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content pom.xml -Raw)).project.version
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match the stable Maven version.' }
+      - run: npm run check
+      - run: mvn -B verify
+      - name: Package and verify public release assets
+        shell: pwsh
+        run: ./scripts/prepare-release.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-assets
+          path: artifacts/publish/
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 14
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-assets
+          path: publish
+      - name: Verify and publish the tagged release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd publish/assets
+          sha256sum --check SHA256SUMS.txt
+          cd ..
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$draft" = true || { echo 'Refusing to overwrite a published release.'; exit 1; }
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "BugParcel ${RELEASE_TAG#v}" --notes-file RELEASE_NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" assets/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

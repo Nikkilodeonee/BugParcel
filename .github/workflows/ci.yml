@@ -1,5 +1,8 @@
 name: Build and verify
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
 permissions:
   contents: read
 jobs:

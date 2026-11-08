@@ -1,0 +1,112 @@
+/* BugParcel "kraft parcel" theme. Loaded last; delete the <link> in index.html to revert.
+   Kraft paper ground, ink-brown text, airmail blue as the working accent, stamp red for failures.
+   Hard small corners, ruled lines, label-style headings. Still no web fonts or external assets. */
+:root{
+  --bg:#e9dfc9;--surface:#f6f0e2;--surface-2:#eee4cf;--surface-3:#e1d5ba;
+  --line:#d2c4a4;--line-strong:#b3a27c;
+  --text:#2a2118;--text-2:#4f4234;--text-3:#665849;
+  --accent:#1f4a78;--accent-strong:#163758;--accent-bg:#dde6ee;--accent-line:#9db3c9;
+  --danger:#a8321f;--danger-bg:#f4ddd2;--danger-line:#d9a595;
+  --warn:#7a5000;--warn-bg:#f2e0a8;--warn-line:#d4b65e;
+  --redact-bg:#2a2118;--redact-fg:#f6f0e2;
+  --primary-bg:#2a2118;--primary-fg:#f6f0e2;--primary-hover:#4a3a2a;
+  --shadow:none;--shadow-lg:0 14px 40px #2a211840;
+  --radius:3px;--radius-sm:2px;
+  --mark:#a9763c;
+  --display:"Bahnschrift","DIN Alternate","Franklin Gothic Medium","Arial Narrow",system-ui,sans-serif;
+  --stripe:repeating-linear-gradient(135deg,#a8321f 0 14px,#f6f0e2 14px 22px,#1f4a78 22px 36px,#f6f0e2 36px 44px);
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1c1812;--surface:#262017;--surface-2:#2f281d;--surface-3:#3a3225;
+  --line:#3d3426;--line-strong:#5a4d38;
+  --text:#ece1ca;--text-2:#c4b69c;--text-3:#9a8c73;
+  --accent:#8fb4e0;--accent-strong:#b5cdec;--accent-bg:#1e2c3d;--accent-line:#3b5878;
+  --danger:#ee8a73;--danger-bg:#3a1e17;--danger-line:#6e3a2e;
+  --warn:#e6bd57;--warn-bg:#352a0f;--warn-line:#5f4b1a;
+  --redact-bg:#0d0b08;--redact-fg:#ece1ca;
+  --primary-bg:#ece1ca;--primary-fg:#1c1812;--primary-hover:#ffffff;
+  --shadow-lg:0 14px 40px #000a;
+  --mark:#b98547;
+  --stripe:repeating-linear-gradient(135deg,#c24a35 0 14px,#262017 14px 22px,#5d8fc9 22px 36px,#262017 36px 44px);
+}}
+
+/* Header: a box-label bar finished with an airmail stripe */
+.masthead{position:relative;background:var(--surface);border-bottom:0;padding-bottom:16px}
+.masthead::after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;background:var(--stripe)}
+.wordmark{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.wordmark b{font-weight:700}
+.version{border:1px solid var(--line-strong);border-radius:2px;padding:0 5px}
+.nav-item{font-family:var(--display);font-size:13.5px;letter-spacing:.05em;text-transform:uppercase;border-radius:2px}
+.nav-item.active{box-shadow:inset 0 -2px 0 var(--text);border-radius:0;font-weight:600}
+.connection{font-family:var(--mono);font-size:12px}
+.connection>span{border-radius:1px}
+
+/* Headings */
+.page-heading h1,.empty-state h2,.dialog h2{font-family:var(--display);font-weight:600;letter-spacing:.01em;text-transform:uppercase}
+.page-heading h1{font-size:28px}
+.empty-state h2{font-size:34px;line-height:1.1}
+.panel-heading h2,.redaction-explainer h3,.dialog h3,.section-caption{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.timeline-summary h2,.comparison-summary h3,.comparison-errors h3{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase}
+.section-caption{color:var(--text)}
+.caption-hint{font-family:var(--font);text-transform:none;letter-spacing:0}
+.incident-title-row input{font-family:var(--display);font-weight:600;letter-spacing:.01em}
+.stat b{font-family:var(--display);font-weight:600;font-size:26px}
+
+/* Panels: ruled paper instead of floating cards */
+.panel,.analysis-notes,.redaction-explainer{border-color:var(--line-strong);box-shadow:none}
+.panel-heading{background:var(--surface-2);border-bottom:1px solid var(--line-strong)}
+.panel-footer{background:none;border-top:1px dashed var(--line-strong)}
+.request-table th{font-family:var(--display);font-size:12px;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid var(--line-strong)}
+.redaction-explainer{background:var(--surface)}
+.replacement-example{border-style:dashed;border-color:var(--line-strong)}
+.dialog{border-radius:3px;border-color:var(--text)}
+.dialog::backdrop{background:#2a21189e}
+
+/* Buttons, fields */
+.button{border-color:var(--text);font-weight:600;letter-spacing:.01em}
+.button:hover:not(:disabled){background:var(--surface-3);border-color:var(--text)}
+.button-primary{border-color:var(--primary-bg)}
+.button-quiet{border-color:transparent}
+.segmented{background:none;border:1px solid var(--line-strong);padding:0;gap:0}
+.segmented button{border-radius:0;border-right:1px solid var(--line-strong)}
+.segmented button:last-child{border-right:0}
+.segmented button.selected{background:var(--primary-bg);color:var(--primary-fg);box-shadow:none}
+.search-field,.custom-form input,#export-format{border-color:var(--line-strong);background:var(--surface)}
+.search-field:focus-within,.custom-form input:focus,.incident-title-row input:focus{box-shadow:0 0 0 2px var(--accent-bg)}
+
+/* Import slots read as shipping-label cut lines */
+.file-drop{border:2px dashed var(--line-strong)}
+.file-drop.loaded{border:2px solid var(--text)}
+.file-icon{border-radius:2px;background:var(--surface-3)}
+
+/* Tabs */
+.evidence-tabs{border-bottom:0;overflow-y:hidden;background:linear-gradient(var(--text),var(--text)) bottom/100% 2px no-repeat}
+.evidence-tab{font-family:var(--display);font-size:13.5px;letter-spacing:.05em;text-transform:uppercase;border-bottom:4px solid transparent;margin-bottom:0}
+.evidence-tab.active{border-bottom-color:var(--accent)}
+.evidence-tab>span{border-radius:2px;background:var(--surface-3);font-family:var(--mono)}
+.tabs-right .icon,.export-note .icon{display:none}
+
+/* Stamps instead of pills */
+.badge,.sample-badge{border-radius:2px;background:none;border:1.5px solid currentColor;font-family:var(--display);font-size:11px;letter-spacing:.09em;text-transform:uppercase;padding:1px 7px;transform:rotate(-1.5deg)}
+.badge{color:var(--text-2)}
+.redaction-row>.icon{display:none}
+.custom-chip{border-radius:2px}
+.status-badge,.level,.logbook-link,.correlation-chip span{border-radius:2px}
+
+/* Switch: a hard slider */
+.switch-track{border-radius:3px;background:var(--line-strong)}
+.switch-track::after{border-radius:2px;box-shadow:none;background:var(--surface)}
+
+/* Steps: numbered labels, not circles */
+.empty-steps{border-left:2px solid var(--text)}
+.empty-steps li::before{content:counter(step,decimal-leading-zero);left:-14px;top:-3px;width:auto;height:auto;padding:1px 4px;border:0;border-radius:2px;background:var(--text);color:var(--bg);font:600 11px var(--mono)}
+.empty-steps b{font-family:var(--display);letter-spacing:.05em;text-transform:uppercase;font-size:14px}
+.guide-steps li>span{border-radius:2px;background:var(--text);color:var(--bg);font-family:var(--mono)}
+
+/* Log timeline: square nodes */
+.log-card::before{border-radius:1px}
+.mini-heading{font-family:var(--display);letter-spacing:.06em;text-transform:uppercase}
+
+/* Toast, export stats */
+.toast{border-radius:2px}
+.export-summary strong{font-family:var(--display);font-weight:600}

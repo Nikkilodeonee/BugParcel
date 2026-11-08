@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.Map;
+import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -31,6 +32,16 @@ class IncidentApiTest {
             var response=mvc.perform(post("/api/export/"+format).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isOk()).andExpect(header().exists("Content-Disposition")).andReturn().getResponse();
             assertThat(response.getContentAsString()).doesNotContain("dev-only-token-not-a-real-secret","alex.morgan@example.test","10.24.8.16","demo-session-value");
         }
+    }
+    @Test void encodedTraceAndArchivedLogsUseTheSameApiAndCannotRequestRemotePulls()throws Exception {
+        var input=mapper.readTree(mvc.perform(get("/api/sample/inputs")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var source=mapper.createObjectNode().put("har",input.path("har").asText()).put("logs",input.path("logs").asText()).put("captureEncoding","base64").put("logsEncoding","base64").put("includeBodies",true);
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString())).andExpect(status().isOk()).andExpect(jsonPath("$.incident.sources.captureFormat").value("Playwright trace")).andExpect(jsonPath("$.incident.sources.logFiles").value(2)).andExpect(jsonPath("$.matchedRequests").value(5));
+        for(String format:List.of("html","markdown","json"))assertThat(mvc.perform(post("/api/export/"+format).contentType(MediaType.APPLICATION_JSON).content(source.toString())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).contains("Playwright trace").doesNotContain("alex.morgan@example.test","dev-only-token-not-a-real-secret","demo-session-value");
+        source.put("logsUrl","http://127.0.0.1:9/private");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString())).andExpect(status().isBadRequest());
+        source.remove("logsUrl");source.put("captureEncoding","unknown");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(source.toString())).andExpect(status().isBadRequest());
     }
     @Test void timelineReplayComparisonAndThemeEndpointsUseSanitizedEvidence()throws Exception {
         var before=mapper.readTree(input());

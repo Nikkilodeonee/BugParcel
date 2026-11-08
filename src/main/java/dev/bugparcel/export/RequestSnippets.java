@@ -20,7 +20,7 @@ public final class RequestSnippets {
     public String replay(Incident incident,RequestEntry r,String tool) {
         if(!Set.of("curl","httpie").contains(tool))throw new IllegalArgumentException("Replay tool must be curl or httpie.");
         String method=r.method().toUpperCase(Locale.ROOT);
-        if(!method.matches("[A-Z]{1,32}"))throw new IllegalArgumentException("Replay requires a valid HTTP method.");
+        if(!method.matches("[A-Z]{1,32}")||method.equals("UNKNOWN"))throw new IllegalArgumentException("Replay requires a recorded, valid HTTP method.");
         StringBuilder out=new StringBuilder("#!/bin/sh\n# BugParcel redacted replay template. Review the destination and data before running.\n# POSIX shell (sh/bash/zsh); no request was executed by BugParcel.\n");
         out.append("# Remaining self-check values: ").append(incident.security().selfCheck().remainingValues()).append(". Kept/allowlisted values may be present.\n");
         out.append("# BP_URL_* values must be percent-encoded. BP_* header values are raw.\n# Transport/compression headers are omitted; this replays normalized text, not a byte-identical capture.\n");

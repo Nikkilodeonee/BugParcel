@@ -1,0 +1,2 @@
+# Native flow records contain byte-length prefixes and must keep their exact bytes.
+*.mitm binary

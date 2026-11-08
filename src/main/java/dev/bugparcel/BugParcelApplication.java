@@ -22,6 +22,6 @@ public class BugParcelApplication {
     @Bean
     Jackson2ObjectMapperBuilderCustomizer jsonLimits() {
         return builder -> builder.postConfigurer(mapper -> mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder().maxStringLength(12_000_000).maxNestingDepth(100).build()));
+            StreamReadConstraints.builder().maxStringLength(16_000_000).maxNestingDepth(100).build()));
     }
 }

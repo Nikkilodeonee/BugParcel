@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$jarPath = Join-Path $projectRoot 'target\bugparcel-1.3.0.jar'
+$jarPath = Join-Path $projectRoot 'target\bugparcel-1.4.0.jar'
 if (-not (Test-Path -LiteralPath $jarPath)) { throw 'Run mvn verify before packaging.' }
 $artifactRoot = Join-Path $projectRoot 'artifacts'
-$releaseRoot = Join-Path $artifactRoot 'BugParcel-1.3.0'
+$releaseRoot = Join-Path $artifactRoot 'BugParcel-1.4.0'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 Copy-Item -LiteralPath $jarPath -Destination (Join-Path $releaseRoot 'bugparcel.jar')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $releaseRoot
@@ -32,7 +32,7 @@ exec java -jar "$(dirname "$0")/bugparcel.jar" "$@"
 # LF line endings and no BOM so the script runs on macOS/Linux.
 [IO.File]::WriteAllText((Join-Path $releaseRoot 'bugparcel'), ($cliSh -replace "`r`n", "`n") + "`n", (New-Object Text.UTF8Encoding $false))
 $instructions = @'
-BugParcel 1.3.0
+BugParcel 1.4.0
 
 Requires Java 17 or newer.
 
@@ -40,13 +40,17 @@ Windows: double-click Start BugParcel.cmd.
 macOS/Linux: run java -jar bugparcel.jar from this folder.
 Open http://127.0.0.1:8087 and click Try a sample incident.
 
-Command line (no server, nothing leaves your machine):
+Command line (no server; local inputs unless explicit pull flags are used):
   bugparcel sample
   bugparcel report bugparcel-sample\checkout.har --logs bugparcel-sample\checkout.ndjson -o report.html
   bugparcel review checkout.har --logs app.log
   bugparcel diff before.har after.har --before-logs before.log --logs after.log -o comparison.html
   bugparcel replay checkout.har --request req-5 --tool curl -o replay.sh
   bugparcel help
+  bugparcel sample --inputs
+  bugparcel report bugparcel-sample\playwright-checkout.zip --logs bugparcel-sample\checkout-logs.zip -o report.html
+  bugparcel report trace.zip --logs "logs/**/*.log.gz" -o report.html
+  bugparcel help inputs
 Use bugparcel.cmd on Windows or ./bugparcel on macOS/Linux.
 Choose Security sample in the interface to try synthetic token/identifier redaction.
 Use --paranoid for checksum identifiers and entropy suspects.
@@ -57,6 +61,12 @@ Timeline and Compare tabs show request completion order, timings and sanitized d
 Try the before/after demo from Compare. Export themes: Paper, Night and High contrast.
 Open an HTML report in your browser and Print / Save as PDF for the print layout.
 Replay exports are POSIX shell templates only; BugParcel never executes them.
+Supported captures include Charles XML, mitmproxy flow format 21/HAR, Postman/Newman runs,
+and Playwright trace ZIPs. Log directories, globs, gzip and ZIP inputs are bounded.
+Input formats and pipeline recipes are available in the interface and help inputs.
+Optional CLI --logs-url, --loki and --elasticsearch flags retrieve from a source you name.
+Authorization is read from an explicitly named environment variable (--auth-env).
+No browser/API pulls, automatic URL fetches, redirects, or credential restoration occur.
 Set required BP_* variables yourself. URL variables need percent-encoded values;
 masked, omitted or truncated bodies require a complete BP_REQUEST_BODY.
 Press Ctrl+C in the terminal to stop the application.
@@ -69,6 +79,6 @@ Author: Roman Sushkin (https://github.com/Nikkilodeonee)
 MIT License.
 '@
 Set-Content -LiteralPath (Join-Path $releaseRoot 'READ ME.txt') -Value $instructions -Encoding Ascii
-Compress-Archive -LiteralPath $releaseRoot -DestinationPath (Join-Path $artifactRoot 'BugParcel-1.3.0.zip') -Force
-Get-FileHash -LiteralPath (Join-Path $artifactRoot 'BugParcel-1.3.0.zip') -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLowerInvariant() + '  BugParcel-1.3.0.zip' } | Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding Ascii
-Write-Host (Join-Path $artifactRoot 'BugParcel-1.3.0.zip')
+Compress-Archive -LiteralPath $releaseRoot -DestinationPath (Join-Path $artifactRoot 'BugParcel-1.4.0.zip') -Force
+Get-FileHash -LiteralPath (Join-Path $artifactRoot 'BugParcel-1.4.0.zip') -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLowerInvariant() + '  BugParcel-1.4.0.zip' } | Set-Content -LiteralPath (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding Ascii
+Write-Host (Join-Path $artifactRoot 'BugParcel-1.4.0.zip')

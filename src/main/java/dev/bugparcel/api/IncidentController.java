@@ -19,7 +19,7 @@ import java.util.Map;
 public class IncidentController {
     private final IncidentService service; private final ReportExporter exporter; private final IncidentComparison comparison;
     public IncidentController(IncidentService service,ReportExporter exporter,IncidentComparison comparison) {this.service=service;this.exporter=exporter;this.comparison=comparison;}
-    @GetMapping("/health") public Map<String,String> health() {return Map.of("status","ok","version","1.3.0");}
+    @GetMapping("/health") public Map<String,String> health() {return Map.of("status","ok","version","1.4.0");}
     @GetMapping("/sample") public Map<String,String> sample() throws IOException {
         return Map.of("har",read("checkout.har"),"logs",read("checkout.ndjson"),"title","Checkout fails after payment confirmation");
     }
@@ -29,6 +29,11 @@ public class IncidentController {
     }
     @GetMapping("/sample/fixed") public Map<String,String> fixedSample() throws IOException {
         return Map.of("har",read("checkout-fixed.har"),"logs",read("checkout-fixed.ndjson"),"title","Checkout after database pool fix (synthetic)");
+    }
+    @GetMapping("/sample/inputs") public Map<String,String> inputSample() throws IOException {
+        return Map.of("har",encoded("playwright-checkout.zip"),"logs",encoded("checkout-logs.zip"),
+            "captureEncoding","base64","logsEncoding","base64","captureName","playwright-checkout.zip","logsName","checkout-logs.zip",
+            "title","Checkout from a Playwright trace and archived logs");
     }
     @PostMapping("/analyze") public Analysis analyze(@Valid @RequestBody AnalysisInput input) {return service.analyze(input);}
     @PostMapping(value="/request/{id}/snippet/{format}",produces=MediaType.TEXT_PLAIN_VALUE)
@@ -56,4 +61,5 @@ public class IncidentController {
     public ResponseEntity<Incident> json(@Valid @RequestBody AnalysisInput input) {return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\"bugparcel-report.json\"").body(service.analyze(input).incident());}
     private ResponseEntity<String> download(String body,String type,String name) {return ResponseEntity.ok().header(HttpHeaders.CONTENT_TYPE,type).header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\""+name+"\"").body(body);}
     private String read(String name)throws IOException {return new ClassPathResource("samples/"+name).getContentAsString(StandardCharsets.UTF_8);}
+    private String encoded(String name)throws IOException {return java.util.Base64.getEncoder().encodeToString(new ClassPathResource("samples/"+name).getContentAsByteArray());}
 }

@@ -32,7 +32,7 @@ public class IncidentComparison {
 
     private AnalysisInput settings(AnalysisInput source,AnalysisInput current) {
         return new AnalysisInput(source.har(),source.logs(),source.title(),current.enabledCategories(),current.customValues(),current.includeBodies(),
-            current.excludedFindingIds(),current.redactFindingIds(),current.timestampHints(),current.profile(),current.policyYaml(),current.decodeContent(),current.reportTheme());
+            current.excludedFindingIds(),current.redactFindingIds(),current.timestampHints(),current.profile(),current.policyYaml(),current.decodeContent(),current.reportTheme(),source.captureEncoding(),source.logsEncoding());
     }
 
     private Incident slice(Analysis source,RequestEntry request,AnalysisInput input) {
@@ -47,7 +47,7 @@ public class IncidentComparison {
         return new Incident(incident.schemaVersion(),incident.title(),incident.createdAt(),List.of(request),logs,incident.warnings(),incident.redactions(),
             incident.includesBodies(),incident.excludedValues(),incident.ambiguousValuesKept(),incident.forcedValues(),
             new CorrelationReview(incident.correlation().logFormats(),List.of(),false,List.of(),0),scopedSecurity,
-            ReportInsights.build(List.of(request),logs,incident.report().theme()));
+            ReportInsights.build(List.of(request),logs,incident.report().theme()),incident.sources());
     }
 
     private Comparison compareClean(Incident before,Incident after,boolean ignoreVolatile,boolean explicitRequests) {

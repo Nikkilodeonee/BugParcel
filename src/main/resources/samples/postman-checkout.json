@@ -1,0 +1,58 @@
+{
+  "results": [
+    {
+      "url": "https://shop.example.test/api/products?limit=12",
+      "method": "GET",
+      "time": 124,
+      "responseCode": {
+        "code": 200,
+        "name": "OK"
+      }
+    },
+    {
+      "url": "https://shop.example.test/api/cart",
+      "method": "POST",
+      "time": 86,
+      "responseCode": {
+        "code": 201,
+        "name": "Created"
+      }
+    },
+    {
+      "url": "https://shop.example.test/api/shipping?email=alex.morgan%40example.test&country=PL",
+      "method": "GET",
+      "time": 42,
+      "responseCode": {
+        "code": 200,
+        "name": "OK"
+      }
+    },
+    {
+      "url": "https://shop.example.test/api/coupons",
+      "method": "POST",
+      "time": 68,
+      "responseCode": {
+        "code": 422,
+        "name": "Unprocessable Entity"
+      }
+    },
+    {
+      "url": "https://shop.example.test/api/payments",
+      "method": "POST",
+      "time": 3048,
+      "responseCode": {
+        "code": 500,
+        "name": "Internal Server Error"
+      }
+    },
+    {
+      "url": "https://shop.example.test/api/orders/order-1842",
+      "method": "GET",
+      "time": 93,
+      "responseCode": {
+        "code": 202,
+        "name": "Accepted"
+      }
+    }
+  ]
+}

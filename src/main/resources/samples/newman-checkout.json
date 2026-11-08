@@ -1,0 +1,417 @@
+{
+  "run": {
+    "executions": [
+      {
+        "id": "request-1",
+        "request": {
+          "method": "GET",
+          "url": {
+            "raw": "https://shop.example.test/api/products?limit=12"
+          },
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "browse-001"
+            },
+            {
+              "key": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "response": {
+          "code": 200,
+          "status": "OK",
+          "header": [
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 124,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              112,
+              114,
+              111,
+              100,
+              117,
+              99,
+              116,
+              115,
+              34,
+              58,
+              49,
+              50,
+              125
+            ]
+          }
+        }
+      },
+      {
+        "id": "request-2",
+        "request": {
+          "method": "POST",
+          "url": {
+            "raw": "https://shop.example.test/api/cart"
+          },
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "cart-002"
+            },
+            {
+              "key": "Authorization",
+              "value": "Bearer dev-only-token-not-a-real-secret"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "body": {
+            "mode": "raw",
+            "raw": "{\"productId\":\"prod-42\",\"quantity\":2,\"email\":\"alex.morgan@example.test\"}"
+          }
+        },
+        "response": {
+          "code": 201,
+          "status": "Created",
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "cart-002"
+            }
+          ],
+          "responseTime": 86,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              99,
+              97,
+              114,
+              116,
+              73,
+              100,
+              34,
+              58,
+              34,
+              99,
+              97,
+              114,
+              116,
+              45,
+              49,
+              56,
+              52,
+              50,
+              34,
+              125
+            ]
+          }
+        }
+      },
+      {
+        "id": "request-3",
+        "request": {
+          "method": "GET",
+          "url": {
+            "raw": "https://shop.example.test/api/shipping?email=alex.morgan%40example.test&country=PL"
+          },
+          "header": [
+            {
+              "key": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "response": {
+          "code": 200,
+          "status": "OK",
+          "header": [],
+          "responseTime": 42,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              99,
+              111,
+              115,
+              116,
+              34,
+              58,
+              49,
+              53,
+              46,
+              48,
+              48,
+              44,
+              34,
+              99,
+              117,
+              114,
+              114,
+              101,
+              110,
+              99,
+              121,
+              34,
+              58,
+              34,
+              80,
+              76,
+              78,
+              34,
+              125
+            ]
+          }
+        }
+      },
+      {
+        "id": "request-4",
+        "request": {
+          "method": "POST",
+          "url": {
+            "raw": "https://shop.example.test/api/coupons"
+          },
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "coupon-004"
+            },
+            {
+              "key": "Authorization",
+              "value": "Bearer dev-only-token-not-a-real-secret"
+            }
+          ],
+          "body": {
+            "mode": "raw",
+            "raw": "{\"code\":\"SUMMER20\"}"
+          }
+        },
+        "response": {
+          "code": 422,
+          "status": "Unprocessable Entity",
+          "header": [],
+          "responseTime": 68,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              101,
+              114,
+              114,
+              111,
+              114,
+              34,
+              58,
+              34,
+              84,
+              104,
+              105,
+              115,
+              32,
+              99,
+              111,
+              117,
+              112,
+              111,
+              110,
+              32,
+              104,
+              97,
+              115,
+              32,
+              101,
+              120,
+              112,
+              105,
+              114,
+              101,
+              100,
+              34,
+              125
+            ]
+          }
+        }
+      },
+      {
+        "id": "request-5",
+        "request": {
+          "method": "POST",
+          "url": {
+            "raw": "https://shop.example.test/api/payments"
+          },
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "pay-005"
+            },
+            {
+              "key": "traceparent",
+              "value": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+            },
+            {
+              "key": "Authorization",
+              "value": "Bearer dev-only-token-not-a-real-secret"
+            },
+            {
+              "key": "Cookie",
+              "value": "session=demo-session-value; preference=compact"
+            },
+            {
+              "key": "x-forwarded-for",
+              "value": "10.24.8.16"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "body": {
+            "mode": "raw",
+            "raw": "{\"cartId\":\"cart-1842\",\"email\":\"alex.morgan@example.test\",\"amount\":149.90,\"currency\":\"PLN\"}"
+          }
+        },
+        "response": {
+          "code": 500,
+          "status": "Internal Server Error",
+          "header": [
+            {
+              "key": "x-request-id",
+              "value": "pay-005"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "responseTime": 3048,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              101,
+              114,
+              114,
+              111,
+              114,
+              34,
+              58,
+              34,
+              67,
+              111,
+              117,
+              108,
+              100,
+              32,
+              110,
+              111,
+              116,
+              32,
+              99,
+              111,
+              109,
+              112,
+              108,
+              101,
+              116,
+              101,
+              32,
+              99,
+              104,
+              101,
+              99,
+              107,
+              111,
+              117,
+              116,
+              34,
+              44,
+              34,
+              114,
+              101,
+              113,
+              117,
+              101,
+              115,
+              116,
+              73,
+              100,
+              34,
+              58,
+              34,
+              112,
+              97,
+              121,
+              45,
+              48,
+              48,
+              53,
+              34,
+              125
+            ]
+          }
+        }
+      },
+      {
+        "id": "request-6",
+        "request": {
+          "method": "GET",
+          "url": {
+            "raw": "https://shop.example.test/api/orders/order-1842"
+          },
+          "header": [
+            {
+              "key": "traceparent",
+              "value": "00-4bf92f3577b34da6a3ce929d0e0e4736-b9c7c989f97918e1-01"
+            },
+            {
+              "key": "Authorization",
+              "value": "Bearer dev-only-token-not-a-real-secret"
+            }
+          ]
+        },
+        "response": {
+          "code": 202,
+          "status": "Accepted",
+          "header": [],
+          "responseTime": 93,
+          "stream": {
+            "type": "Buffer",
+            "data": [
+              123,
+              34,
+              115,
+              116,
+              97,
+              116,
+              117,
+              115,
+              34,
+              58,
+              34,
+              112,
+              101,
+              110,
+              100,
+              105,
+              110,
+              103,
+              34,
+              125
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

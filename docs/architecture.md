@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart LR
-  files[HAR + server logs] --> browser[Browser memory]
+  files[Capture + server logs] --> browser[Browser memory]
   browser -->|same-origin JSON on loopback| api[Input and byte limits]
   api --> parse[Normalize allowlisted evidence]
   parse --> join[Typed identifier index]
@@ -15,6 +15,12 @@ flowchart LR
 ```
 
 One Spring Boot executable serves the static interface and JSON API. No database or stateful incident session is needed. Each analysis owns its normalized evidence and redaction map; concurrent requests do not share either. The original inputs live in browser memory until refresh or clearing the session. The Java process releases request-local objects for garbage collection after producing the response.
+
+## Input boundary
+
+`CaptureInputs` converts HAR, Charles XML, native mitmproxy HTTP flow format 21, Postman/Newman reports, and Playwright network snapshots into HAR-shaped evidence. `InputBytes` enforces file/expansion/entry bounds, strict text decoding, and archive-path checks without extraction. Referenced body materialization has an aggregate budget, including repeated references. XML parsing blocks DTD/entity resolution and caps depth/attributes. `LogInputs` combines bounded text parts/arrays; `LogFileInputs` provides CLI-only directory/glob discovery with no symlink traversal.
+
+API field names remain backward compatible (`har` for the capture). Optional base64 transport permits binary/archived inputs; normalized exports contain source format/counts, not transport data or archive names. `RemoteLogPuller` is invoked only by explicit CLI flags. It limits query ranges/results, HTTP bytes, and total request time; it does not follow redirects or disable TLS verification. Selected authorization values remain process-local. Pull metadata is restricted to known source labels and a completeness flag; limited retrieval fails strict checks. The server cannot invoke pulling. See [input semantics and limits](inputs.md).
 
 ## Correlation
 
@@ -54,7 +60,7 @@ Schema 1.5 adds `ReportInsights`, derived solely from sanitized evidence: comple
 
 ## Local HTTP boundary
 
-The application binds to loopback. A servlet filter checks the Host and any Origin header, disallows cross-site POSTs, requires JSON input, and sets no-store/security headers. A bounded servlet input stream enforces the total byte limit even when Content-Length is absent. Jackson also limits nesting and string size; parsers constrain entry counts and field lengths. API errors do not echo source content or stack traces. There are no CORS grants, external resources, telemetry SDKs, or outbound HTTP calls.
+The application binds to loopback. A servlet filter checks the Host and any Origin header, disallows cross-site POSTs, requires JSON input, and sets no-store/security headers. A bounded servlet input stream enforces the total byte limit even when Content-Length is absent. Jackson also limits nesting and string size; parsers constrain entry counts and field lengths. API errors do not echo source content or stack traces. There are no CORS grants, external resources, telemetry SDKs, or server-side outbound fetches. Only explicit CLI pull flags can contact a chosen log service.
 
 Local processes with access to the same user account are trusted. This is not an authenticated remote service. Host binding changes, reverse proxies, public hosting, and multi-user deployment would require a separate design.
 

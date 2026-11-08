@@ -19,6 +19,11 @@ import dev.bugparcel.model.Models.Analysis;
 import dev.bugparcel.model.Models.AnalysisInput;
 import dev.bugparcel.model.Models.FindingReview;
 import dev.bugparcel.model.Models.RedactionCount;
+import dev.bugparcel.input.InputBytes;
+import dev.bugparcel.input.LogInputs;
+import dev.bugparcel.input.LogFileInputs;
+import dev.bugparcel.input.RemoteLogPuller;
+import java.time.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,12 +46,12 @@ import java.util.Set;
 
 /**
  * Command-line entry point. It uses the same analysis and export code as the web
- * interface, never starts a server, and never makes a network connection.
+ * interface and never starts a server. Network retrieval requires explicit pull options.
  * Reports go to a file or stdout; the human summary goes to stderr so output
  * can be piped.
  */
 public final class Cli {
-    public static final String VERSION = "1.3.0";
+    public static final String VERSION = "1.4.0";
     public static final int OK = 0;
     public static final int FAILURE = 1;
     public static final int USAGE = 2;
@@ -56,17 +61,20 @@ public final class Cli {
     private static final List<String> CATEGORIES = List.of("CREDENTIAL", "EMAIL", "IP", "PHONE", "CUSTOM", "POLICY", "CARD", "IBAN", "PESEL", "SUSPECT");
     private static final Set<String> COMMANDS = Set.of("report", "review", "sample", "serve", "help", "version", "diff", "replay");
     private static final Set<String> VALUE_OPTIONS = Set.of(
-        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port", "policy", "profile", "theme", "before-logs", "request", "tool");
+        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port", "policy", "profile", "theme", "before-logs", "request", "tool",
+        "logs-url", "loki", "elasticsearch", "request-id", "selector", "index", "id-field", "since", "until", "pull-limit", "auth-env");
     private static final Map<String, String> SHORT_OPTIONS = Map.of("o", "out", "q", "quiet", "h", "help");
 
-    private static final Set<String> REPORT_OPTIONS = Set.of(
+    private static final Set<String> BASE_REPORT_OPTIONS = Set.of(
         "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force",
         "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "strict", "quiet", "help", "theme");
-    private static final Set<String> DIFF_OPTIONS=extended(REPORT_OPTIONS,"before-logs","include-volatile-headers");
+    private static final Set<String> PULL_OPTIONS=Set.of("logs-url","loki","elasticsearch","request-id","selector","index","id-field","since","until","pull-limit","auth-env");
+    private static final Set<String> REPORT_OPTIONS=extended(BASE_REPORT_OPTIONS,PULL_OPTIONS.toArray(String[]::new));
+    private static final Set<String> DIFF_OPTIONS=extended(BASE_REPORT_OPTIONS,"before-logs","include-volatile-headers");
     private static final Set<String> REPLAY_OPTIONS=extended(REPORT_OPTIONS,"request","tool");
-    private static final Set<String> REVIEW_OPTIONS = Set.of(
-        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "reveal", "json", "help");
-    private static final Set<String> SAMPLE_OPTIONS = Set.of("dir", "overwrite", "help");
+    private static final Set<String> REVIEW_OPTIONS = extended(Set.of(
+        "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "reveal", "json", "help"),PULL_OPTIONS.toArray(String[]::new));
+    private static final Set<String> SAMPLE_OPTIONS = Set.of("dir", "overwrite", "inputs", "help");
 
     private final InputStream stdin;
     private final PrintStream out;
@@ -83,7 +91,7 @@ public final class Cli {
         this.workingDirectory = workingDirectory;
         this.mapper = new ObjectMapper();
         this.mapper.getFactory().setStreamReadConstraints(
-            StreamReadConstraints.builder().maxStringLength(12_000_000).maxNestingDepth(100).build());
+            StreamReadConstraints.builder().maxStringLength(16_000_000).maxNestingDepth(100).build());
         this.service = new IncidentService(new HarParser(mapper), new LogParser(mapper), new Correlator(), mapper);
     }
 
@@ -437,7 +445,10 @@ public final class Cli {
         }
         Path directory = resolve(args.one("dir") != null ? args.one("dir") : "bugparcel-sample");
         Files.createDirectories(directory);
-        for (String name : List.of("checkout.har", "checkout.ndjson")) {
+        List<String> names = new ArrayList<>(List.of("checkout.har", "checkout.ndjson"));
+        if(args.flag("inputs"))names.addAll(List.of("charles-checkout.xml","mitmproxy-checkout.mitm","newman-checkout.json","postman-checkout.json","playwright-checkout.zip","checkout-logs.zip"));
+        for(String name:names)if(Files.exists(directory.resolve(name))&&!args.flag("overwrite"))throw new IllegalArgumentException("A sample output already exists. Use a new directory or --overwrite.");
+        for (String name : names) {
             Path file = directory.resolve(name);
             if (Files.exists(file) && !args.flag("overwrite")) {
                 throw new IllegalArgumentException(file.getFileName() + " already exists in " + directory
@@ -467,24 +478,29 @@ public final class Cli {
             harPath = args.positional.get(0);
         }
         if (harPath == null) {
-            throw new UsageException("Provide a HAR file: bugparcel report <file.har> [--logs <file>].");
+            throw new UsageException("Provide a network capture: bugparcel report <capture> [--logs <file|directory|glob>].");
         }
         if (args.positional.size() > (args.one("har") == null ? 1 : 0)) {
             throw new UsageException("Unexpected extra argument '" + args.positional.get(args.one("har") == null ? 1 : 0)
                 + "'. Pass log files with --logs.");
         }
-        String har = read(harPath);
+        String har = java.util.Base64.getEncoder().encodeToString(readBytes(harPath, InputBytes.MAX_FILE));
 
         List<String> logPaths = args.all("logs");
+        List<String> logParts = new ArrayList<>();
         String logs = null;
-        if (logPaths.size() == 1) {
-            logs = read(logPaths.get(0));
-        } else if (logPaths.size() > 1) {
-            StringBuilder merged = new StringBuilder();
+        if (!logPaths.isEmpty()) {
+            var logReader = new LogInputs(mapper);
+            List<String> paths = new ArrayList<>();
             for (String path : logPaths) {
-                merged.append(asLines(read(path), path)).append('\n');
+                if (path.equals("-")) logParts.addAll(logReader.files(readBytes("-", InputBytes.MAX_FILE), new ArrayList<>()));
+                else paths.add(path);
             }
-            logs = merged.toString();
+            if (!paths.isEmpty()) {
+                var files = new LogFileInputs(workingDirectory, mapper);
+                logParts.addAll(files.read(files.resolve(paths)));
+            }
+            logs = logReader.bundle(logParts);
         }
 
         List<String> custom = args.all("redact");
@@ -526,7 +542,44 @@ public final class Cli {
             Path name = Paths.get(harPath).getFileName();
             title = name == null ? null : "Incident: " + name;
         }
-        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"), profile, policyYaml, args.flag("no-decode")?Boolean.FALSE:null,args.one("theme"));
+        var pullOptions=pullOptions(args);
+        if(pullOptions!=null) {
+            var pull=new RemoteLogPuller(mapper).pull(pullOptions);
+            logParts.addAll(pull.parts());logs=new LogInputs(mapper).bundle(logParts,pull);
+            if(!args.flag("quiet"))err.println("Explicit "+pull.sourceKind()+" pull completed"+(pull.limited()?" with partial/limited results.":"."));
+        }
+        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"), profile, policyYaml, args.flag("no-decode")?Boolean.FALSE:null,args.one("theme"),"base64",logs==null?null:"bundle");
+    }
+
+    private RemoteLogPuller.Options pullOptions(Args args) {
+        List<String> sources=List.of("logs-url","loki","elasticsearch").stream().filter(key->args.one(key)!=null).toList();
+        if(sources.isEmpty()) {
+            if(PULL_OPTIONS.stream().anyMatch(key->args.one(key)!=null))throw new UsageException("Pull options require --logs-url, --loki, or --elasticsearch.");
+            return null;
+        }
+        if(sources.size()!=1)throw new UsageException("Choose one pull source: --logs-url, --loki, or --elasticsearch.");
+        String source=sources.get(0),auth=null;
+        if(args.one("auth-env")!=null) {
+            if(!args.one("auth-env").matches("[A-Za-z_][A-Za-z0-9_]{0,127}"))throw new UsageException("--auth-env needs an environment-variable name.");
+            auth=System.getenv(args.one("auth-env"));if(auth==null)throw new UsageException("The named authorization environment variable is not set.");
+        }
+        if(source.equals("logs-url")) {
+            if(List.of("request-id","selector","index","id-field","since","until","pull-limit").stream().anyMatch(key->args.one(key)!=null))throw new UsageException("Request-ID query options apply to Loki/Elasticsearch, not a raw log URL.");
+            return new RemoteLogPuller.Options(RemoteLogPuller.Kind.URL,args.one(source),null,null,null,null,null,null,1000,auth);
+        }
+        if(source.equals("loki")&&(args.one("index")!=null||args.one("id-field")!=null)||source.equals("elasticsearch")&&args.one("selector")!=null)throw new UsageException("--selector is for Loki; --index and --id-field are for Elasticsearch.");
+        Instant end=Instant.now(),start;
+        int limit=1000;
+        try {
+            if(args.one("until")!=null)end=Instant.parse(args.one("until"));
+            String since=args.one("since")==null?"15m":args.one("since");
+            if(since.matches("[0-9]{1,6}[smh]")) {
+                long count=Long.parseLong(since.substring(0,since.length()-1));char unit=since.charAt(since.length()-1);
+                start=end.minusSeconds(Math.multiplyExact(count,unit=='h'?3600:unit=='m'?60:1));
+            } else start=Instant.parse(since);
+            if(args.one("pull-limit")!=null)limit=Integer.parseInt(args.one("pull-limit"));
+        } catch(Exception e){throw new UsageException("Use --since 15m/1h or an ISO timestamp with offset, --until an ISO timestamp, and --pull-limit 1–10000.");}
+        return new RemoteLogPuller.Options(source.equals("loki")?RemoteLogPuller.Kind.LOKI:RemoteLogPuller.Kind.ELASTICSEARCH,args.one(source),args.one("request-id"),args.one("selector"),args.one("index"),args.one("id-field")==null?"requestId.keyword":args.one("id-field"),start,end,limit,auth);
     }
 
     /** Applies --keep/--force. IDs are resolved against a first pass so short prefixes work. */
@@ -543,7 +596,7 @@ public final class Cli {
             }
         }
         return service.analyze(new AnalysisInput(base.har(), base.logs(), base.title(), base.enabledCategories(),
-            base.customValues(), base.includeBodies(), keep, force, base.timestampHints(), base.profile(), base.policyYaml(), base.decodeContent(),base.reportTheme()));
+            base.customValues(), base.includeBodies(), keep, force, base.timestampHints(), base.profile(), base.policyYaml(), base.decodeContent(),base.reportTheme(),base.captureEncoding(),base.logsEncoding()));
     }
 
     private static Set<String> resolveIds(List<String> prefixes, List<FindingReview> findings, String option) {
@@ -588,6 +641,18 @@ public final class Cli {
 
     private Path resolve(String path) {
         return workingDirectory.resolve(path);
+    }
+
+    private byte[] readBytes(String path, int limit) throws IOException {
+        if (path.equals("-")) {
+            if (stdinUsed) throw new UsageException("Standard input can only be used for one input.");
+            stdinUsed = true;
+            return InputBytes.read(stdin, limit);
+        }
+        Path file = resolve(path);
+        if (!Files.exists(file)) throw new IllegalArgumentException("Cannot find " + path + ".");
+        if (!Files.isRegularFile(file)) throw new IllegalArgumentException("Cannot read the requested regular input file.");
+        try (var stream = Files.newInputStream(file)) { return InputBytes.read(stream, limit); }
     }
 
     private String read(String path) throws IOException {
@@ -640,6 +705,7 @@ public final class Cli {
     }
 
     private void summary(Analysis analysis) {
+        err.println("Input: "+analysis.incident().sources().captureFormat()+" | "+analysis.incident().sources().captureFiles()+" capture streams | "+analysis.incident().sources().logFiles()+" log files");
         var incident = analysis.incident();
         err.println(incident.requests().size() + " requests | " + analysis.failedRequests() + " failed | "
             + analysis.matchedRequests() + " linked | " + incident.logs().size() + " logs | "
@@ -667,20 +733,55 @@ public final class Cli {
     }
 
     private void help(String topic) {
-        if("diff".equals(topic)) {
+        if("inputs".equals(topic)) {
+            out.println("""
+                Input formats
+                  HAR, Playwright HAR, .har.gz, and ZIP with one HAR plus attached bodies.
+                  Charles XML export (not native .chls), mitmproxy HTTP flow format 21/HAR.
+                  Postman desktop run summaries, detailed Newman JSON, Playwright trace.zip network snapshots.
+                  No collection scripts execute; no referenced paths or URLs are fetched.
+
+                Logs
+                  --logs file, directory, \"logs/*.log\", or \"logs/**/*.log.gz\"; repeat as needed.
+                  .gz and ZIP logs are expanded in memory. JSON arrays mix with text/NDJSON.
+                  Directory traversal skips symlinks; at most 200 files and 5,000 discovery entries.
+                  Files <=10 MB, normalized text <=12 MB, ZIP expansion <=32 MB / 2,000 entries.
+
+                Explicit pull options (report/review/replay only)
+                  --logs-url <file:///path|https://...>   Fetch a local file URL or raw log response
+                  --loki <base URL> --selector '{app="api"}' --request-id <id>
+                  --elasticsearch <base URL> --index 'logs-*' --request-id <id>
+                  --id-field <field>          Elasticsearch exact-match field (default requestId.keyword)
+                  --since 15m|1h|<ISO time>    Default: last 15 minutes; range <=24 hours
+                  --until <ISO time>          Default: now; timestamps require explicit offsets
+                  --pull-limit <N>            1-10000 entries, default 1000; partial results fail --strict
+                  --auth-env <ENV_NAME>       Read the full Authorization value from this variable
+                  TLS is verified. Redirects are not followed. Auth needs HTTPS except loopback.
+                  Loki uses a literal line filter; Elasticsearch uses an exact term and @timestamp range.
+                  Fetches are capped at 10 MB and 20 seconds. No browser/API pull mode exists.
+
+                Pipelines
+                  docker logs api 2>&1 | bugparcel report capture.har --logs - -o report.html
+                  kubectl logs deploy/api --timestamps | bugparcel report capture.har --logs - -o report.html
+                  journalctl -u api -o cat | bugparcel report capture.har --logs - -o report.html
+                  docker compose logs --no-color --no-log-prefix api | bugparcel report capture.har --logs - -o report.html
+
+                Run 'bugparcel sample --inputs' for fictional examples of every capture format.
+                """);
+        } else if("diff".equals(topic)) {
             out.println("Usage: bugparcel diff before.har after.har [--before-logs before.log] [--logs after.log] [-o comparison.html] [--format html|md|json]\nShared report privacy options apply to both captures. --include-volatile-headers compares changing IDs/Date too. --theme paper|night|contrast chooses HTML styling. No original files or private review map are exported.");
         } else if("replay".equals(topic)) {
             out.println("Usage: bugparcel replay file.har --request req-1 [--tool curl|httpie] [--include-bodies] [-o replay.sh]\nUses report privacy options. Generates a POSIX shell template; no request is executed. Set BP_* variables explicitly; URL values must be percent-encoded. Masked/truncated/missing bodies require a complete BP_REQUEST_BODY.");
         } else if ("report".equals(topic)) {
             out.println("""
-                Usage: bugparcel report <file.har> [options]
+                Usage: bugparcel report <capture> [options]
 
                 Connect browser requests to server logs, redact, and write a shareable report.
 
                 Input
-                  <file.har>, --har <file>     HAR recording (use - for standard input)
-                  --logs <file>                Server logs; repeat for several files, - for standard input.
-                                               JSON, Spring/Java/Python text, logfmt, access, or Docker JSON.
+                  <capture>, --har <file>      Supported capture; --har is a legacy name. Use - for stdin.
+                  --logs <file|dir|glob>       Logs, .gz/ZIP, directory, quoted glob; repeat, or - for stdin.
+                  See 'bugparcel help inputs' for formats, limits, pipelines and explicit pull options.
                   --title <text>               Report title (default: "Incident: <har file name>")
                   --include-bodies             Include request/response bodies (redacted, truncated)
                   --timestamp-hints            Show unconfirmed time guesses (off by default; never ID links)
@@ -718,9 +819,10 @@ public final class Cli {
                   --timestamp-hints            Unconfirmed time guesses, separate from ID links""");
         } else if ("sample".equals(topic)) {
             out.println("""
-                Usage: bugparcel sample [--dir <folder>] [--overwrite]
+                Usage: bugparcel sample [--dir <folder>] [--overwrite] [--inputs]
 
-                Write the fictional checkout incident (HAR + NDJSON logs) so you can try BugParcel.""");
+                Write the fictional checkout incident. --inputs adds Charles, mitmproxy, Postman/Newman,
+                Playwright trace, and archived log samples.""");
         } else {
             out.println("BugParcel " + VERSION);
             out.println("""
@@ -742,7 +844,7 @@ public final class Cli {
                   bugparcel report checkout.har --logs app.log -o report.html
                   kubectl logs deploy/api | bugparcel report checkout.har --logs - -o report.md
 
-                Run 'bugparcel help report' for every option.""");
+                Run 'bugparcel help report' for report options; 'bugparcel help inputs' for formats and pulling logs.""");
         }
     }
 }

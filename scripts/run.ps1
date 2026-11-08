@@ -2,7 +2,7 @@ param([switch]$Build, [int]$Port = 8087)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
-$jarPath = Join-Path $projectRoot 'target\bugparcel-1.3.0.jar'
+$jarPath = Join-Path $projectRoot 'target\bugparcel-1.4.0.jar'
 if ($Build -or -not (Test-Path -LiteralPath $jarPath)) {
     $mavenCommand = Get-Command mvn.cmd -ErrorAction SilentlyContinue
     if ($mavenCommand) { $mavenPath = $mavenCommand.Source }

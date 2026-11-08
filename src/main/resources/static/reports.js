@@ -76,7 +76,7 @@ export function createReportFeatures({state,payload,api,escape,renderLogCard,dow
     const target=event.target.closest('[data-report-action]'),action=target?.dataset.reportAction;
     if(action==='timeline')switchTab('timeline');
     else if(action==='timeline-prev'){timelinePage--;renderTimeline();}else if(action==='timeline-next'){timelinePage++;renderTimeline();}
-    else if(action==='baseline'){if(state.busy)return;state.baseline={har:state.har,logs:state.logs,title:state.title};state.baselineLabel=incident().title;invalidate();renderComparisonControls();toast('Baseline captured in memory. Replace files to compare the next capture.');}
+    else if(action==='baseline'){if(state.busy)return;state.baseline={har:state.har,logs:state.logs,title:state.title,captureEncoding:state.captureEncoding,logsEncoding:state.logsEncoding};state.baselineLabel=incident().title;invalidate();renderComparisonControls();toast('Baseline captured in memory. Replace files to compare the next capture.');}
     else if(action==='clear-baseline'){state.baseline=null;state.baselineLabel='';invalidate();renderComparisonControls();}
     else if(action==='compare')await compare();
     else if(action==='comparison-prev'){comparisonPage--;renderComparison();}else if(action==='comparison-next'){comparisonPage++;renderComparison();}

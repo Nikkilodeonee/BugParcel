@@ -2,9 +2,11 @@
 
 **Connect browser requests to backend logs. Share the evidence.**
 
-When a checkout fails, the useful evidence often lives in two places: a HAR recording from the browser and a server log file. BugParcel connects matching identifiers, lets you review redactions, and packages the result as a report someone can open without installing anything.
+When a checkout fails, the useful evidence often lives in two places: a network capture and server logs. BugParcel connects matching identifiers, lets you review redactions, and packages the result as a report someone can open without installing anything. Captures can come from HAR, Charles XML, mitmproxy, Postman/Newman runs, or Playwright trace ZIPs.
 
 A local Java 17 / Spring Boot application with a dependency-free browser interface. No account, database, analytics, AI service, or cloud upload.
+
+Imports and redaction stay on your machine. Optional CLI pull flags contact only the log source you specify; the browser and local API never fetch referenced URLs.
 
 ![BugParcel incident workspace](docs/workspace.jpg)
 
@@ -14,7 +16,7 @@ Requires **Java 17+** to run the packaged app. Building from source also require
 
 ```sh
 mvn verify
-java -jar target/bugparcel-1.3.0.jar
+java -jar target/bugparcel-1.4.0.jar
 ```
 
 Open **http://127.0.0.1:8087** and click **Open the sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
@@ -33,12 +35,12 @@ After a successful build, create a portable ZIP with `scripts/package.ps1`. It c
 
 ## Command line
 
-The same JAR is also a CLI. Commands never start a server or open a port, and the report starts in well under a second.
+The same JAR is also a CLI. Report/review/diff/replay commands never start a server. Inputs are local by default; explicit pull flags can retrieve logs from a chosen file/HTTP URL, Loki, or Elasticsearch.
 
 ```sh
-java -jar target/bugparcel-1.3.0.jar sample                      # writes ./bugparcel-sample/
-java -jar target/bugparcel-1.3.0.jar report checkout.har --logs app.log -o report.html
-java -jar target/bugparcel-1.3.0.jar review checkout.har --logs app.log
+java -jar target/bugparcel-1.4.0.jar sample                      # writes ./bugparcel-sample/
+java -jar target/bugparcel-1.4.0.jar report checkout.har --logs app.log -o report.html
+java -jar target/bugparcel-1.4.0.jar review checkout.har --logs app.log
 ```
 
 The portable ZIP adds `bugparcel.cmd` and `bugparcel` launchers, so these become `bugparcel report ...`.
@@ -80,9 +82,51 @@ A synthetic shop checkout has six browser requests and nine server log entries:
 
 Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked logs**. The data is fictional, including all credentials and contact details. Download the files from **Sample files** in the header to try importing them yourself.
 
+Open **Supported inputs & capture recipes → Try trace + archived logs** for the same incident imported from a Playwright trace and two archived log files. `bugparcel sample --inputs` writes fictional examples of every supported capture format.
+
+## More input sources
+
+| Capture | Accepted input | Scope |
+| --- | --- | --- |
+| Browser / Playwright HAR | `.har`, `.har.gz`, or ZIP with one HAR and attached bodies | Includes request/response headers, optional text bodies, IDs, status, and duration. |
+| Charles | XML session export | Native `.chls` sessions are not XML exports. External DTDs are ignored; internal entities are rejected. |
+| mitmproxy | HAR or native HTTP flow format 21 | Non-HTTP flows, connections, certificates, and WebSocket frames are excluded. Older native formats need HAR export. |
+| Postman / Newman | Desktop run-summary JSON or detailed Newman JSON reporter output | Summaries lack headers/bodies and may lack methods; use Newman for detailed evidence. Collections alone are not run evidence. |
+| Playwright trace | `trace.zip` with HAR-shaped `resource-snapshot` network events and included body resources | Imports network evidence; excludes actions, DOM, screenshots, sources, and console events. |
+
+All formats pass through the same redaction/review engine. The UI, CLI summary, and reports identify the detected capture format and log-file count. Missing timestamps stay untimed. An unavailable negative status is shown as a network failure (`0`); an unavailable duration displays as `0 ms` with an approximation warning.
+
+```sh
+bugparcel report trace.zip --logs logs/ -o incident.html
+bugparcel report capture.har --logs "logs/**/*.log.gz" -o incident.html
+bugparcel report charles.xml --logs logs.zip --include-bodies -o incident.json
+newman run collection.json --reporters json --reporter-json-export run.json
+bugparcel report run.json --logs app.log -o incident.html
+```
+
+Log files can be text, JSON arrays, NDJSON, `.gz`, or ZIP. Directory discovery skips symlinks, sorts/deduplicates inputs, and supports quoted globs on Windows and Unix. JSON-array and text files can be combined. Limits apply to file count, expansion, discovery, and total text; archives are read in memory without extraction. See [input formats, limits, and recipes](docs/inputs.md).
+
+```sh
+docker logs api 2>&1 | bugparcel report capture.har --logs - -o report.html
+kubectl logs deploy/api --timestamps | bugparcel report capture.har --logs - -o report.html
+journalctl -u api -o cat | bugparcel report capture.har --logs - -o report.html
+docker compose logs --no-color --no-log-prefix api | bugparcel report capture.har --logs - -o report.html
+```
+
+Pulling is explicit and **CLI-only**. Retrieved logs still pass through normal redaction before export. Authorization comes from an explicitly named environment variable holding the complete header value; endpoint/auth settings are excluded from reports.
+
+```sh
+bugparcel report capture.har --logs-url "file:///C:/logs/api.log" -o report.html
+bugparcel report capture.har --logs-url https://logs.example.test/incident.log -o report.html
+bugparcel report capture.har --loki http://127.0.0.1:3100 --selector '{app="api"}' --request-id pay-42 --since 15m -o report.html
+bugparcel report capture.har --elasticsearch https://search.example.test --index 'logs-*' --id-field requestId.keyword --request-id pay-42 --auth-env BUGPARCEL_AUTH -o report.html
+```
+
+Loki uses a literal line filter for the ID; Elasticsearch uses an exact term and `@timestamp` range. The default window is 15 minutes, with a 24-hour maximum; responses are capped at 10 MB and 20 seconds. Result limits and partial search responses are labeled and fail `--strict`. TLS verification stays enabled, redirects are not followed, and authorization requires HTTPS outside loopback. For all options, run `bugparcel help inputs`.
+
 ## What works
 
-- Import HAR recordings and automatically detect JSON, Spring Boot, Logback/Log4j2, Python, logfmt, Apache/nginx access, and Docker JSON logs, including mixed files and multiline stacks.
+- Import supported network captures, compressed/archived logs, directories, and globs. Automatically detect JSON, Spring Boot, Logback/Log4j2, Python, logfmt, Apache/nginx access, and Docker JSON logs, including mixed files and multiline stacks.
 - Inspect HTTP status, duration, headers, optional text bodies, correlation IDs, and linked logs.
 - Filter failed or unlinked requests; search requests and logs; jump from a log entry to its request.
 - Match typed request/edge IDs before broader correlation/trace IDs. Repeated IDs are labeled as shared context. Optional time hints are unconfirmed guesses and never become ID links.
@@ -404,6 +448,7 @@ HTML reports escape imported strings and carry a restrictive CSP with no scripts
 | GET | `/api/sample` | Fictional HAR and logs |
 | GET | `/api/sample/security` | Synthetic security demo and example policy |
 | GET | `/api/sample/fixed` | Synthetic successful checkout for comparison |
+| GET | `/api/sample/inputs` | Synthetic base64 Playwright trace ZIP + archived logs |
 | POST | `/api/analyze` | Normalize, correlate, and redact |
 | POST | `/api/export/html` | Standalone HTML report |
 | POST | `/api/export/markdown` | Markdown report |
@@ -430,11 +475,15 @@ Analysis, report export, and request snippet endpoints use this JSON input. Comp
   "profile": "standard",
   "policyYaml": null,
   "decodeContent": true,
-  "reportTheme": "paper"
+  "reportTheme": "paper",
+  "captureEncoding": "text",
+  "logsEncoding": "text"
 }
 ```
 
-Omit `enabledCategories` to use the selected profile's defaults. An explicit empty array disables all categories. Omit `profile`/`decodeContent` to honor the policy defaults (otherwise standard/on). Paranoid-only detectors run only in the paranoid profile. Categories are `CREDENTIAL`, `EMAIL`, `IP`, `PHONE`, `CUSTOM`, `POLICY`, `CARD`, `IBAN`, `PESEL`, `SUSPECT`. The normalized export excludes original input files, policy text, and the private review map. A CLI-generated title can use the input filename. Internal report IDs (`req-1`, `log-1`) preserve links after redaction. Schema **1.5** retains `incident.security` and adds `incident.report`: sanitized timeline references, waterfall timing data, summary IDs/counts, error signatures, and theme. Themes are `paper` (default), `night`, and `contrast`.
+Omit `enabledCategories` to use the selected profile's defaults. An explicit empty array disables all categories. Omit `profile`/`decodeContent` to honor the policy defaults (otherwise standard/on). Paranoid-only detectors run only in the paranoid profile. Categories are `CREDENTIAL`, `EMAIL`, `IP`, `PHONE`, `CUSTOM`, `POLICY`, `CARD`, `IBAN`, `PESEL`, `SUSPECT`. The normalized export excludes original input files, policy text, and the private review map. A CLI-generated title can use the input filename. Internal report IDs (`req-1`, `log-1`) preserve links after redaction. Schema **1.6** retains `incident.security` and `incident.report`, and adds `incident.sources` with a known capture-format label and capture/log-file counts. Themes are `paper` (default), `night`, and `contrast`.
+
+`har` remains the backward-compatible capture field name. Use `captureEncoding: "base64"` / `logsEncoding: "base64"` for binary, compressed, or archived inputs; omitted encodings default to text. `logsEncoding: "bundle"` accepts a bounded JSON array of log-text strings (used by the CLI). Original input data, transport encoding, archive names, URLs, and authentication settings are not copied into source metadata. There is no API option to pull a URL or service. The 28 MB total HTTP request limit applies to base64 transport and both sides of a comparison together.
 
 `/api/analyze` also returns `findings`, separate from `incident`. Each finding includes a stable ID, original value, categories, source locations, field-scoping flag, substitution count, and ambiguity reasons/counts. Pass IDs in `excludedFindingIds` to keep them or `redactFindingIds` to override ambiguity and redact them. Omit an ID from both sets for Automatic. The same choices are accepted by all export routes. IDs are local review identifiers, not bearer credentials. Exports record exclusion/explicit-redaction counts, an automatically kept ambiguity count, and actual per-category replacement counts, with no original review list or IDs.
 
@@ -462,6 +511,7 @@ The container runs as a non-root user. The container itself listens on all inter
 
 ```text
 src/main/java/dev/bugparcel/
+  input/      Bounded capture adapters, archive decoding, CLI log discovery/pulling
   analysis/   HAR/log parsers, identifier extraction, correlation, redaction
   api/        HTTP endpoints, validation, local origin/host and size guards
   export/     Standalone HTML and Markdown generation

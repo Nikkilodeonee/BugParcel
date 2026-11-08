@@ -5,14 +5,14 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const state = {har:'', logs:'', title:'Untitled incident', files:{har:null,logs:null}, sample:false, analysis:null, tab:'requests', filter:'all', logFilter:'all', search:'', logSearch:'', selected:null, detailTab:'evidence', enabled:new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']), custom:[], exclusions:new Set(), forced:new Set(), reviewSearch:'', reviewPage:0, includeBodies:false, timestampHints:false, busy:false};
-Object.assign(state,{profile:null,policyYaml:null,policyName:'',decodeContent:null,samplePolicy:null});
+Object.assign(state,{profile:null,policyYaml:null,policyName:'',decodeContent:null,samplePolicy:null,captureEncoding:null,logsEncoding:null});
 state.enabled.add('POLICY');
 const matchLabels = {'request-id':'Request ID match','shared-request':'Shared request ID context','trace-id':'Trace ID match','shared-trace':'Shared trace context','correlation-id':'Correlation ID match','shared-correlation':'Shared correlation context',unmatched:'No shared identifier'};
 Object.assign(matchLabels, {'cf-ray':'Cloudflare Ray ID match','shared-ray':'Shared Cloudflare Ray context','aws-trace-id':'AWS trace match','shared-aws-trace':'Shared AWS trace context','azure-root-id':'Azure root context','shared-azure-root':'Shared Azure root context'});
 let pending, revision = 0, toastTimer;
 const reports=createReportFeatures({state,payload,api,escape,renderLogCard,downloadBlob,toast,message,switchTab,renderLogs,loadSample});
 
-function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:state.enabled?[...state.enabled]:null,customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced],timestampHints:state.timestampHints,profile:state.profile,policyYaml:state.policyYaml,decodeContent:state.decodeContent,reportTheme:state.reportTheme}; }
+function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:state.enabled?[...state.enabled]:null,customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced],timestampHints:state.timestampHints,profile:state.profile,policyYaml:state.policyYaml,decodeContent:state.decodeContent,reportTheme:state.reportTheme,captureEncoding:state.captureEncoding,logsEncoding:state.logsEncoding}; }
 function message(text='') { $('#feedback').textContent=text; $('#feedback').hidden=!text; }
 function toast(text) { clearTimeout(toastTimer); $('#toast').textContent=text; $('#toast').hidden=false; toastTimer=setTimeout(()=>$('#toast').hidden=true,4500); }
 function setBusy(busy) {
@@ -35,8 +35,8 @@ function replacements(value) {return escape(value).replace(/\[REDACTED_[A-Z]+_\d
 function updateFiles() {
   for(const key of ['har','logs']) {
     const file=state.files[key];$(`#${key}-drop`).classList.toggle('loaded',!!file);
-    $(`#${key}-name`).textContent=file?file.name:key==='har'?'Browser recording':'Server logs';
-    $(`#${key}-hint`).textContent=file?`${fileSize(file.size)} · ${state.sample?'Synthetic sample':'In memory'} · Click to replace`:key==='har'?'Drop a .har file or browse files':'Drop JSON, text, logfmt, access or Docker logs';
+    $(`#${key}-name`).textContent=file?file.name:key==='har'?'Network capture':'Server logs';
+    $(`#${key}-hint`).textContent=file?`${fileSize(file.size)} · ${state.sample?'Synthetic sample':'In memory'} · Click to replace`:key==='har'?'HAR, Charles XML, mitmproxy, Postman or trace.zip':'Text, JSON, .gz or .zip logs';
     $(`#${key}-status`).innerHTML=icon(file?'check':'plus');
   }
   $('#sample-badge').hidden=!state.sample;$('#clear-button').hidden=!state.har&&!state.logs;
@@ -68,9 +68,10 @@ async function loadSample(variant='checkout') {
   if(state.har&&!state.sample) {toast('Clear the current session before loading the sample, so your imported evidence stays available.');return;}
   setBusy(true);message();
   try {
-    const response=await fetch(variant==='security'?'/api/sample/security':variant==='fixed'?'/api/sample/fixed':'/api/sample');if(!response.ok)throw new Error('The sample files could not be loaded. Is the local engine running?');
+    const response=await fetch(variant==='security'?'/api/sample/security':variant==='fixed'?'/api/sample/fixed':variant==='inputs'?'/api/sample/inputs':'/api/sample');if(!response.ok)throw new Error('The sample files could not be loaded. Is the local engine running?');
     const sample=await response.json();clearSession(false,true);state.har=sample.har;state.logs=sample.logs;state.title=sample.title;state.sample=true;state.samplePolicy=sample.policyYaml||null;
-    state.files={har:{name:`${variant}.har`,size:new Blob([sample.har]).size},logs:{name:`${variant}.ndjson`,size:new Blob([sample.logs]).size}};
+    state.captureEncoding=sample.captureEncoding||null;state.logsEncoding=sample.logsEncoding||null;
+    state.files={har:{name:sample.captureName||`${variant}.har`,size:sample.captureEncoding==='base64'?Math.floor(sample.har.length*3/4):new Blob([sample.har]).size},logs:{name:sample.logsName||`${variant}.ndjson`,size:sample.logsEncoding==='base64'?Math.floor(sample.logs.length*3/4):new Blob([sample.logs]).size}};
     state.selected=null;state.search='';$('#request-search').value='';state.filter='all';state.tab='requests';
     await analyze();
   }catch(error){message(error.message);}finally{setBusy(false);}
@@ -79,17 +80,20 @@ async function importFile(key,file) {
   if(!file)return;
   if(file.size>10*1024*1024){message(`${file.name} is larger than 10 MB. Export a shorter recording around the incident.`);return;}
   try {
-    const input=await file.text();if(!input.trim())throw new Error('This file is empty. Choose a recording with some evidence.');
+    if(!file.size)throw new Error('This file is empty. Choose a recording with some evidence.');
+    const input=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',',2)[1]);reader.onerror=()=>reject(new Error('The file could not be read.'));reader.readAsDataURL(file);});
     if(state.sample){clearSession(false,true);}
     state[key]=input;state.files[key]={name:file.name,size:file.size};state.sample=false;state.selected=null;
-    if(key==='har'&&state.title==='Untitled incident')state.title=file.name.replace(/\.(har|json)$/i,'').substring(0,160)||'Untitled incident';
+    state[key==='har'?'captureEncoding':'logsEncoding']='base64';
+    if(key==='har'&&state.title==='Untitled incident')state.title=file.name.replace(/\.(har|json|xml|mitm|flows|zip|gz)$/i,'').substring(0,160)||'Untitled incident';
     await analyze();
-    if(!state.har)toast('Logs added. Add a HAR file to connect the evidence.');
+    if(!state.har)toast('Logs added. Add a network capture to connect the evidence.');
   }catch(error){message(error.message);}finally{$(`#${key}-file`).value='';}
 }
 function clearSession(notify=true,preserveBaseline=false) {
   const saved=preserveBaseline&&state.baseline?Object.fromEntries(['baseline','baselineLabel','profile','policyYaml','policyName','decodeContent','enabled','custom','exclusions','forced','includeBodies','reportTheme','timestampHints'].map(key=>[key,state[key] instanceof Set?new Set(state[key]):Array.isArray(state[key])?[...state[key]]:state[key]])):null;
   reports.clear();
+  state.captureEncoding=null;state.logsEncoding=null;$('#source-summary').textContent='';
   state.profile=null;state.policyYaml=null;state.policyName='';state.decodeContent=null;state.samplePolicy=null;$('#policy-file').value='';
   state.timestampHints=false;$('#timestamp-hints').checked=false;
   pending?.abort();revision++;state.har='';state.logs='';state.title='Untitled incident';state.files={har:null,logs:null};state.sample=false;state.analysis=null;state.selected=null;state.custom=[];state.exclusions.clear();state.forced.clear();state.reviewSearch='';state.reviewPage=0;state.enabled=new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']);state.includeBodies=false;state.filter='all';state.logFilter='all';state.tab='requests';state.detailTab='evidence';state.search='';state.logSearch='';
@@ -105,8 +109,9 @@ function clearSession(notify=true,preserveBaseline=false) {
 function render() {
   updateFiles();const result=state.analysis;
   $('#workspace').hidden=!result;$('#empty-state').hidden=!!result;$('#export-button').disabled=!result||state.busy;
-  if(!result)return;
+  if(!result){$('#source-summary').textContent='';return;}
   const incident=result.incident;
+  $('#source-summary').textContent=`Detected capture: ${incident.sources.captureFormat} · ${incident.sources.captureFiles} capture ${incident.sources.captureFiles===1?'stream':'streams'} · ${incident.sources.logFiles} log ${incident.sources.logFiles===1?'file':'files'}`;
   // Keep the original editable title in memory; the preview and export use the redacted title.
   if(document.activeElement!==$('#incident-title'))$('#incident-title').value=state.title;
   $('#incident-meta').textContent=`${incident.requests.length} requests · ${incident.logs.length} log entries`;
@@ -278,6 +283,8 @@ async function sampleFiles() {
 document.addEventListener('click',async event=>{
   const action=event.target.closest('[data-action]')?.dataset.action;
   if(action==='sample')await loadSample();
+  else if(action==='input-formats')$('#input-dialog').showModal();
+  else if(action==='input-sample'){ $('#input-dialog').close();await loadSample('inputs'); }
   else if(action==='security-sample')await loadSample('security');
   else if(action==='apply-sample-policy'&&state.samplePolicy)await importPolicy(new File([state.samplePolicy],'bugparcel.example.yml',{type:'application/yaml'}));
   else if(action==='download-policy'){

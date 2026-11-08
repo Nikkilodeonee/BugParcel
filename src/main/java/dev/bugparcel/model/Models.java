@@ -11,8 +11,8 @@ import java.util.Set;
 public final class Models {
     private Models() {}
     public record AnalysisInput(
-        @NotBlank @Size(max=12_000_000) String har,
-        @Size(max=12_000_000) String logs,
+        @NotBlank @Size(max=16_000_000) String har,
+        @Size(max=16_000_000) String logs,
         @Size(max=160) String title,
         Set<String> enabledCategories,
         @Size(max=50) List<@Size(min=2, max=200) String> customValues,
@@ -23,8 +23,15 @@ public final class Models {
         @Size(max=16) String profile,
         @Size(max=65_536) String policyYaml,
         Boolean decodeContent,
-        @Size(max=16) String reportTheme
+        @Size(max=16) String reportTheme,
+        @Size(max=16) String captureEncoding,
+        @Size(max=16) String logsEncoding
     ) {
+        public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
+                             boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds,boolean timestampHints,
+                             String profile,String policyYaml,Boolean decodeContent,String reportTheme) {
+            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,redactFindingIds,timestampHints,profile,policyYaml,decodeContent,reportTheme,null,null);
+        }
         public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
                              boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds,boolean timestampHints,
                              String profile,String policyYaml,Boolean decodeContent) {
@@ -73,9 +80,17 @@ public final class Models {
         Map<String,Integer> errorsByLogger, String firstStackLogId, boolean firstStackTimed,
         List<ErrorGroup> errorGroups, List<TimelineEvent> timeline, String timelineStart,
         int untimedEvents, List<WaterfallRow> waterfall, double waterfallDurationMs, int untimedRequests) {}
+    public record InputSources(String captureFormat, int captureFiles, int logFiles) {}
     public record Incident(String schemaVersion, String title, String createdAt, List<RequestEntry> requests,
         List<LogEntry> logs, List<String> warnings, List<RedactionCount> redactions, boolean includesBodies,
-        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation, SecurityReview security, ReportView report) {}
+        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation, SecurityReview security, ReportView report,
+        InputSources sources) {
+        public Incident(String schemaVersion,String title,String createdAt,List<RequestEntry> requests,List<LogEntry> logs,
+                        List<String> warnings,List<RedactionCount> redactions,boolean includesBodies,int excludedValues,
+                        int ambiguousValuesKept,int forcedValues,CorrelationReview correlation,SecurityReview security,ReportView report) {
+            this(schemaVersion,title,createdAt,requests,logs,warnings,redactions,includesBodies,excludedValues,ambiguousValuesKept,forcedValues,correlation,security,report,new InputSources("HAR",1,logs.isEmpty()?0:1));
+        }
+    }
     public record Analysis(Incident incident, int failedRequests, int matchedRequests, int unmatchedLogs,
         int redactedOccurrences, List<FindingReview> findings) {}
     public record ComparisonInput(@NotNull @Valid AnalysisInput before, @NotNull @Valid AnalysisInput after, Boolean ignoreVolatileHeaders) {}

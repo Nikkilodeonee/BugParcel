@@ -75,6 +75,27 @@ class CliTest {
         assertThat(run("report",har.toString(),"--theme","unknown").code()).isEqualTo(2);
         assertThat(run("help").out()).contains("diff before after","replay <file.har>");
     }
+    @Test void sourceSamplesArchivesAndDirectoryGlobsWorkThroughTheCli() throws Exception {
+        assertThat(run("sample","--dir","inputs","--inputs").code()).isZero();
+        for(String name:List.of("charles-checkout.xml","mitmproxy-checkout.mitm","newman-checkout.json","postman-checkout.json","playwright-checkout.zip")) {
+            var result=run("report","inputs/"+name,"--logs","inputs/checkout-logs.zip","--include-bodies","--format","json","-o","-","--quiet");
+            assertThat(result.code()).as(name+": "+result.err()).isZero();assertThat(result.out()).doesNotContain(SECRETS);
+            assertThat(mapper.readTree(result.out()).path("sources").path("logFiles").asInt()).isEqualTo(2);
+        }
+        Files.createDirectories(temp.resolve("local-logs/nested"));
+        Files.writeString(temp.resolve("local-logs/a.log"),"{\"message\":\"first\"}");Files.writeString(temp.resolve("local-logs/nested/b.log"),"{\"message\":\"second\"}");
+        var glob=run("report",har.toString(),"--logs","local-logs/**/*.log","--format","json","-o","-","--quiet");
+        assertThat(glob.code()).isZero();assertThat(mapper.readTree(glob.out()).path("logs")).hasSize(2);
+        assertThat(run("help","inputs").out()).contains("--logs-url","--loki","--elasticsearch","journalctl","trace.zip");
+    }
+    @Test void fileUrlPullStaysExplicitAndItsSettingsNeverAppearInReports() throws Exception {
+        var result=run("report",har.toString(),"--logs-url",logs.toUri().toString(),"--format","json","--strict","-o","-","--quiet");
+        assertThat(result.code()).isZero();assertThat(result.out()).doesNotContain(SECRETS).doesNotContain(logs.toUri().toString());
+        assertThat(mapper.readTree(result.out()).path("logs")).hasSize(9);
+        assertThat(run("report",har.toString(),"--request-id","id").code()).isEqualTo(Cli.USAGE);
+        assertThat(run("report",har.toString(),"--logs-url",logs.toUri().toString(),"--loki","http://127.0.0.1:9").code()).isEqualTo(Cli.USAGE);
+        assertThat(run("diff",har.toString(),har.toString(),"--logs-url",logs.toUri().toString()).code()).isEqualTo(Cli.USAGE);
+    }
     @Test
     void timestampHintsAreOptInAndKeepConfirmedCountsSeparate() throws Exception {
         for (String name : List.of("correlation.har", "correlation.log")) {

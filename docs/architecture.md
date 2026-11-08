@@ -48,6 +48,10 @@ Structured bodies are parsed where possible, allowing nested fields and JSON pro
 
 Exports accept the source inputs and current choices, not a client-authored report model. The service runs normalization, matching, and redaction again. Only the normalized incident is passed to the exporter. HTML templates escape every imported string, use no scripts, and include a restrictive CSP. Markdown text escapes inline markup and sizes its code fences around imported backticks. JSON export uses Jackson serialization of the report model.
 
+Schema 1.5 adds `ReportInsights`, derived solely from sanitized evidence: completion-time events, request timing rows, summary references/counts, and hashed error signatures. `EvidenceTime` rejects incomplete/unzoned/out-of-range times. SVG geometry is generated from finite numeric data; labels are escaped. `ReportSections` shares chart, summary, grouping, theme, and print rendering between exporters.
+
+`IncidentComparison` re-analyzes both sources under the current privacy settings. Route/occurrence pairing and placeholder normalization are explicit comparison rules, separate from `Correlator`. Two-request comparisons select only confirmed linked evidence and rescan it; scan/redaction totals retain source provenance. `RequestSnippets` receives sanitized evidence only and generates escaped text or POSIX shell templates with required replacement variables. It has no HTTP client or process execution capability. See [detailed report semantics](reports.md).
+
 ## Local HTTP boundary
 
 The application binds to loopback. A servlet filter checks the Host and any Origin header, disallows cross-site POSTs, requires JSON input, and sets no-store/security headers. A bounded servlet input stream enforces the total byte limit even when Content-Length is absent. Jackson also limits nesting and string size; parsers constrain entry counts and field lengths. API errors do not echo source content or stack traces. There are no CORS grants, external resources, telemetry SDKs, or outbound HTTP calls.
@@ -58,4 +62,4 @@ Local processes with access to the same user account are trusted. This is not an
 
 The first release targets incident-sized HAR files and Spring Boot-compatible logs. It parses JSON trees in memory and does not stream multi-gigabyte files. The data is not persisted, so reload recovery and cross-device synchronization are absent. These choices keep the core workflow inspectable and useful without asking people to upload private logs or provision infrastructure.
 
-The next extensions should follow real user evidence: adapters for a specific team's log format, a Java command-line entry point, or more redaction formats. Keep claims about supported formats tied to fixtures and behavioral tests.
+The next extensions should follow real user evidence: adapters for a specific team's log format or more redaction formats. Keep claims about supported formats tied to fixtures and behavioral tests.

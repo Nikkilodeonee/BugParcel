@@ -56,6 +56,25 @@ class CliTest {
         assertThat(result.err()).contains("6 requests | 2 failed | 5 linked | 9 logs | 2 unlinked logs",
             "not a guarantee", "bugparcel review");
     }
+    @Test void diffAndReplayWriteSanitizedArtifactsAndValidateTheirOptions() throws Exception {
+        Path fixed=temp.resolve("fixed.har");
+        try(var stream=getClass().getResourceAsStream("/samples/checkout-fixed.har")){Files.write(fixed,stream.readAllBytes());}
+        var diff=run("diff",har.toString(),fixed.toString(),"--before-logs",logs.toString(),"--format","json","--theme","night","-o","-");
+        assertThat(diff.code()).isZero();assertThat(diff.out()).doesNotContain(SECRETS);
+        assertThat(mapper.readTree(diff.out()).path("summary").path("beforeFailures").asInt()).isEqualTo(2);
+        assertThat(mapper.readTree(diff.out()).path("summary").path("afterFailures").asInt()).isZero();
+        assertThat(mapper.readTree(diff.out()).path("before").path("report").path("theme").asText()).isEqualTo("night");
+        for(String tool:List.of("curl","httpie")){
+            var replay=run("replay",har.toString(),"--request","req-5","--tool",tool,"--include-bodies","-o","-");
+            assertThat(replay.code()).isZero();assertThat(replay.out()).contains("BP_REQUEST_BODY",tool.equals("curl")?"curl --":"http --").doesNotContain(SECRETS);
+            assertThat(replay.err()).contains("No request was executed");
+        }
+        assertThat(run("replay",har.toString(),"--request","req-5","--tool","jira").code()).isEqualTo(2);
+        assertThat(run("replay",har.toString()).code()).isEqualTo(2);
+        assertThat(run("diff",har.toString()).code()).isEqualTo(2);
+        assertThat(run("report",har.toString(),"--theme","unknown").code()).isEqualTo(2);
+        assertThat(run("help").out()).contains("diff before after","replay <file.har>");
+    }
     @Test
     void timestampHintsAreOptInAndKeepConfirmedCountsSeparate() throws Exception {
         for (String name : List.of("correlation.har", "correlation.log")) {

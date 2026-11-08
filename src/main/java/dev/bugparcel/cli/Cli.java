@@ -10,6 +10,10 @@ import dev.bugparcel.analysis.HarParser;
 import dev.bugparcel.analysis.IncidentService;
 import dev.bugparcel.analysis.LogParser;
 import dev.bugparcel.analysis.RedactionPolicy;
+import dev.bugparcel.analysis.IncidentComparison;
+import dev.bugparcel.model.Models.ComparisonInput;
+import dev.bugparcel.export.ComparisonExporter;
+import dev.bugparcel.export.RequestSnippets;
 import dev.bugparcel.export.ReportExporter;
 import dev.bugparcel.model.Models.Analysis;
 import dev.bugparcel.model.Models.AnalysisInput;
@@ -42,7 +46,7 @@ import java.util.Set;
  * can be piped.
  */
 public final class Cli {
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
     public static final int OK = 0;
     public static final int FAILURE = 1;
     public static final int USAGE = 2;
@@ -50,14 +54,16 @@ public final class Cli {
 
     private static final long MAX_INPUT_BYTES = 50_000_000L;
     private static final List<String> CATEGORIES = List.of("CREDENTIAL", "EMAIL", "IP", "PHONE", "CUSTOM", "POLICY", "CARD", "IBAN", "PESEL", "SUSPECT");
-    private static final Set<String> COMMANDS = Set.of("report", "review", "sample", "serve", "help", "version");
+    private static final Set<String> COMMANDS = Set.of("report", "review", "sample", "serve", "help", "version", "diff", "replay");
     private static final Set<String> VALUE_OPTIONS = Set.of(
-        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port", "policy", "profile");
+        "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force", "dir", "port", "policy", "profile", "theme", "before-logs", "request", "tool");
     private static final Map<String, String> SHORT_OPTIONS = Map.of("o", "out", "q", "quiet", "h", "help");
 
     private static final Set<String> REPORT_OPTIONS = Set.of(
         "har", "logs", "out", "format", "title", "redact", "disable", "keep", "force",
-        "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "strict", "quiet", "help");
+        "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "strict", "quiet", "help", "theme");
+    private static final Set<String> DIFF_OPTIONS=extended(REPORT_OPTIONS,"before-logs","include-volatile-headers");
+    private static final Set<String> REPLAY_OPTIONS=extended(REPORT_OPTIONS,"request","tool");
     private static final Set<String> REVIEW_OPTIONS = Set.of(
         "har", "logs", "title", "redact", "disable", "keep", "force", "include-bodies", "timestamp-hints", "policy", "profile", "paranoid", "no-policy", "no-decode", "reveal", "json", "help");
     private static final Set<String> SAMPLE_OPTIONS = Set.of("dir", "overwrite", "help");
@@ -127,6 +133,8 @@ public final class Cli {
                 case "review" -> {
                     return review(parse(args, 1, REVIEW_OPTIONS, "review"));
                 }
+                case "diff" -> {return diff(parse(args,1,DIFF_OPTIONS,"diff"));}
+                case "replay" -> {return replay(parse(args,1,REPLAY_OPTIONS,"replay"));}
                 case "sample" -> {
                     return sample(parse(args, 1, SAMPLE_OPTIONS, "sample"));
                 }
@@ -276,6 +284,43 @@ public final class Cli {
         return OK;
     }
 
+    private static Set<String> extended(Set<String> source,String...extra) {Set<String> result=new HashSet<>(source);result.addAll(List.of(extra));return Set.copyOf(result);}
+    private Args side(Args original,String har,List<String> logs) {
+        Args copy=new Args();copy.values.putAll(original.values);copy.flags.addAll(original.flags);
+        copy.values.remove("har");copy.values.remove("before-logs");copy.values.put("logs",logs);copy.positional.add(har);return copy;
+    }
+    private int diff(Args args)throws IOException {
+        if(args.flag("help")){help("diff");return OK;}
+        if(args.positional.size()!=2||args.one("har")!=null)throw new UsageException("Use: bugparcel diff before.har after.har --before-logs before.log --logs after.log");
+        if(!args.all("keep").isEmpty()||!args.all("force").isEmpty())throw new UsageException("Diff uses policy/category/custom settings on both captures. Resolve per-value decisions in the workspace before comparing.");
+        var before=input(side(args,args.positional.get(0),args.all("before-logs")),Set.of(),Set.of());
+        var after=input(side(args,args.positional.get(1),args.all("logs")),Set.of(),Set.of());
+        var comparison=new IncidentComparison(service,mapper).compare(new ComparisonInput(before,after,!args.flag("include-volatile-headers")));
+        String format=format(args);var exporter=new ComparisonExporter();
+        String content=switch(format){case "json"->mapper.writerWithDefaultPrettyPrinter().writeValueAsString(comparison);case "markdown"->exporter.markdown(comparison);default->exporter.html(comparison);};
+        write(content,args.one("out"),"bugparcel-comparison."+extension(format));
+        if(!args.flag("quiet"))err.println(comparison.summary().changed()+" changed | "+comparison.summary().added()+" added | "+comparison.summary().removed()+" removed | "+comparison.summary().unchanged()+" unchanged");
+        if(args.flag("strict")&&List.of(comparison.before(),comparison.after()).stream().anyMatch(i->i.ambiguousValuesKept()>0||i.security().scanLimited()||!i.security().selfCheck().completed()||i.security().selfCheck().issues().stream().anyMatch(issue->!issue.intentionallyKept())||i.security().selfCheck().omittedIssues()>0))return STRICT_FAILURE;
+        return OK;
+    }
+    private int replay(Args args)throws IOException {
+        if(args.flag("help")){help("replay");return OK;}
+        if(args.one("request")==null)throw new UsageException("Replay needs --request req-1 (an internal request ID).");
+        if(args.one("format")!=null)throw new UsageException("Use --tool curl|httpie for replay output.");
+        Analysis analysis=decided(input(args,Set.of(),Set.of()),args);
+        String tool=args.one("tool")==null?"curl":args.one("tool");
+        if(!Set.of("curl","httpie").contains(tool))throw new UsageException("Replay tool must be curl or httpie.");
+        String content=new RequestSnippets().render(analysis.incident(),args.one("request"),tool);
+        write(content,args.one("out"),"bugparcel-replay.sh");
+        if(!args.flag("quiet"))err.println("Wrote a redacted "+tool+" template. No request was executed; inspect destination and supply required BP_* variables.");
+        if(args.flag("strict")&&(analysis.incident().ambiguousValuesKept()>0||analysis.incident().security().scanLimited()||!analysis.incident().security().selfCheck().completed()||analysis.incident().security().selfCheck().omittedIssues()>0||analysis.incident().security().selfCheck().issues().stream().anyMatch(i->!i.intentionallyKept())))return STRICT_FAILURE;
+        return OK;
+    }
+    private void write(String content,String destination,String fallback)throws IOException {
+        if("-".equals(destination)){out.print(content);out.flush();return;}
+        Path path=resolve(destination==null?fallback:destination);if(path.getParent()!=null)Files.createDirectories(path.getParent());Files.writeString(path,content,StandardCharsets.UTF_8);
+    }
+
     private String format(Args args) {
         String value = args.one("format");
         if (value == null) {
@@ -414,6 +459,9 @@ public final class Cli {
     // ---- shared ----
 
     private AnalysisInput input(Args args, Set<String> keep, Set<String> force) throws IOException {
+        if(args.one("theme")!=null&&!Set.of("paper","night","contrast").contains(args.one("theme"))) {
+            throw new UsageException("Report theme must be paper, night, or contrast.");
+        }
         String harPath = args.one("har");
         if (harPath == null && !args.positional.isEmpty()) {
             harPath = args.positional.get(0);
@@ -478,7 +526,7 @@ public final class Cli {
             Path name = Paths.get(harPath).getFileName();
             title = name == null ? null : "Incident: " + name;
         }
-        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"), profile, policyYaml, args.flag("no-decode")?Boolean.FALSE:null);
+        return new AnalysisInput(har, logs, title, enabled, custom, args.flag("include-bodies"), keep, force, args.flag("timestamp-hints"), profile, policyYaml, args.flag("no-decode")?Boolean.FALSE:null,args.one("theme"));
     }
 
     /** Applies --keep/--force. IDs are resolved against a first pass so short prefixes work. */
@@ -495,7 +543,7 @@ public final class Cli {
             }
         }
         return service.analyze(new AnalysisInput(base.har(), base.logs(), base.title(), base.enabledCategories(),
-            base.customValues(), base.includeBodies(), keep, force, base.timestampHints(), base.profile(), base.policyYaml(), base.decodeContent()));
+            base.customValues(), base.includeBodies(), keep, force, base.timestampHints(), base.profile(), base.policyYaml(), base.decodeContent(),base.reportTheme()));
     }
 
     private static Set<String> resolveIds(List<String> prefixes, List<FindingReview> findings, String option) {
@@ -619,7 +667,11 @@ public final class Cli {
     }
 
     private void help(String topic) {
-        if ("report".equals(topic)) {
+        if("diff".equals(topic)) {
+            out.println("Usage: bugparcel diff before.har after.har [--before-logs before.log] [--logs after.log] [-o comparison.html] [--format html|md|json]\nShared report privacy options apply to both captures. --include-volatile-headers compares changing IDs/Date too. --theme paper|night|contrast chooses HTML styling. No original files or private review map are exported.");
+        } else if("replay".equals(topic)) {
+            out.println("Usage: bugparcel replay file.har --request req-1 [--tool curl|httpie] [--include-bodies] [-o replay.sh]\nUses report privacy options. Generates a POSIX shell template; no request is executed. Set BP_* variables explicitly; URL values must be percent-encoded. Masked/truncated/missing bodies require a complete BP_REQUEST_BODY.");
+        } else if ("report".equals(topic)) {
             out.println("""
                 Usage: bugparcel report <file.har> [options]
 
@@ -637,6 +689,7 @@ public final class Cli {
                   --policy <file>              Team YAML policy (auto-loads ./bugparcel.yml)
                   --no-policy                  Disable automatic policy loading
                   --no-decode                  Disable bounded base64/JWT/gzip inspection
+                  --theme paper|night|contrast  Standalone HTML theme; printing uses a light stylesheet
 
                 Output
                   -o, --out <file>             Report path, or - for standard output (default: bugparcel-report.<ext>)
@@ -679,6 +732,8 @@ public final class Cli {
                 Commands
                   report <file.har>   Correlate, redact, and write an HTML, Markdown, or JSON report
                   review <file.har>   List detected sensitive values and how each is handled
+                  diff before after   Compare two HAR captures under the same privacy settings
+                  replay <file.har>   Export a redacted cURL/HTTPie template for --request req-N
                   sample              Write a fictional incident to try it out
                   serve [--port N]    Start the local web interface (also the default with no command)
                   version             Print the version

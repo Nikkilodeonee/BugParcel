@@ -14,7 +14,7 @@ Requires **Java 17+** to run the packaged app. Building from source also require
 
 ```sh
 mvn verify
-java -jar target/bugparcel-1.2.0.jar
+java -jar target/bugparcel-1.3.0.jar
 ```
 
 Open **http://127.0.0.1:8087** and click **Open the sample incident**. Or open http://127.0.0.1:8087/?sample=1 to jump directly into the demo.
@@ -36,9 +36,9 @@ After a successful build, create a portable ZIP with `scripts/package.ps1`. It c
 The same JAR is also a CLI. Commands never start a server or open a port, and the report starts in well under a second.
 
 ```sh
-java -jar target/bugparcel-1.2.0.jar sample                      # writes ./bugparcel-sample/
-java -jar target/bugparcel-1.2.0.jar report checkout.har --logs app.log -o report.html
-java -jar target/bugparcel-1.2.0.jar review checkout.har --logs app.log
+java -jar target/bugparcel-1.3.0.jar sample                      # writes ./bugparcel-sample/
+java -jar target/bugparcel-1.3.0.jar report checkout.har --logs app.log -o report.html
+java -jar target/bugparcel-1.3.0.jar review checkout.har --logs app.log
 ```
 
 The portable ZIP adds `bugparcel.cmd` and `bugparcel` launchers, so these become `bugparcel report ...`.
@@ -59,10 +59,12 @@ bugparcel report checkout.har --logs app.log --keep 056e8dd9 --force 9a31c0de --
 | --- | --- |
 | `report <file.har>` | Correlate, redact, and write HTML (default), Markdown, or JSON. The format follows the `-o` extension or `--format`. |
 | `review <file.har>` | List each detected value with category, uses, and status. `--json` for tooling. Use any unique 8+ character ID prefix with `--keep` or `--force`. |
+| `diff before.har after.har` | Compare captures; attach `--before-logs old.log` and `--logs new.log`. Export HTML, Markdown, or JSON; `--include-volatile-headers` shows changing ID/timing headers. |
+| `replay <file.har>` | Generate a redacted POSIX shell template with `--request req-N --tool curl\|httpie`. Nothing is executed. |
 | `sample` | Write the fictional checkout incident to try it. |
 | `serve [--port N]` | Start the web interface (also the default with no command). |
 
-Exit codes are `0` success, `1` failure (unreadable file, invalid input), `2` usage error, and `3` when `--strict` finds ambiguous address values that automatic rules kept visible, which makes it usable as a CI gate. Error messages never echo input content. Logs may be UTF-8 or UTF-16 (what PowerShell 5 `>` writes); `--logs -` reads standard input. Run `bugparcel help report` for every option.
+Exit codes are `0` success, `1` failure (unreadable file, invalid input), `2` usage error, and `3` when `--strict` finds unresolved automatically kept ambiguous addresses, unexpected self-check matches, an incomplete self-check, or scan limits. Error messages never echo input content. Logs may be UTF-8 or UTF-16 (what PowerShell 5 `>` writes); `--logs -` reads standard input. Run `bugparcel help report` for every option.
 
 The CLI uses the identical analysis and redaction code as the web interface, so the same limits and caveats apply. Redaction is still pattern-based: run `review` before sharing a report.
 
@@ -89,6 +91,9 @@ Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked l
 - Turn redaction categories on or off and preview the resulting evidence. Bodies are excluded by default.
 - Review every detected value with its categories, source locations, and substitution count. Choose **Automatic**, **Redact all occurrences**, or **Keep value**. Ambiguous address-like values remain listed even when automatic rules leave them visible. Search and pagination cover the full detected list.
 - Export standalone HTML, Markdown, or normalized JSON. Export always re-analyzes the original in-memory input with the current settings.
+- Read a merged completion-time timeline, an inline SVG request waterfall, failed/slowest request summaries, logger error counts, and the first error stack. Collapse repeated stack signatures while retaining every occurrence.
+- Compare two captures or select a working and failing request. Copy redacted request evidence as a GitHub issue, Jira wiki, Slack, or Markdown snippet; export cURL/HTTPie replay templates.
+- Choose Paper, Night, or High contrast for HTML exports. Browser Print / Save as PDF uses a light, paginated stylesheet.
 - Keyboard-accessible controls, responsive layouts, visible focus states, a `/` shortcut for request search, and light and dark themes that follow your system setting.
 
 ![Local detected-value review](docs/redaction-review.jpg)
@@ -100,6 +105,26 @@ Expected results: **6 requests · 2 failed · 5 linked · 9 logs · 2 unlinked l
 3. Select a failed request. Inspect the linked entries and stack traces. Shared trace context is broader than a single request.
 4. Open **Redactions**, review the defaults and the detected-value list, and add exact custom values where needed. Choose **Keep value** for a false positive, or **Redact all occurrences** for an ambiguous value that is an address. **Automatic** restores the context policy. Category switches still apply; another overlapping rule can hide a kept value.
 5. Inspect the evidence, then download a report. Everything is held in memory; reload or clear the session to discard it.
+
+## Reports, comparison, and replay
+
+Open **Timeline** for the brief, request waterfall, and merged evidence. The first timed error is highlighted; **Leading up to first timed error** shows five preceding events and two following events. HTTP outcomes are placed at request **completion**, while waterfall bars use the HAR start and duration. Logs need a full date and explicit UTC offset to join the chronological order. Unknown times remain visible outside it. Clocks can differ; order does not establish causation.
+
+**Server logs → Group repeated errors** collapses repeated stack signatures. A representative stack and every occurrence's timestamp/message remain available. Grouping uses sanitized exception types and frames, ignoring source line numbers and placeholder counters. Different failures can share a signature; JSON retains the individual stacks for inspection.
+
+In **Compare**, capture the current incident as a baseline, replace its HAR/log files, and run the comparison. Both raw captures stay only in browser memory. Replacing sample files preserves a captured baseline and current privacy settings; **Clear session**, reload, or closing the page discards them. Comparison always re-analyzes both captures under the **current** settings, including bodies, policy, profile, and review choices. Select **Two requests in this incident** for an explicit working/failing pair. **Try the before/after demo** compares the fictional timeout with a corrected checkout.
+
+Incident pairing uses method + normalized origin/path, then occurrence order for repeated endpoints. Query, status, duration, header, and included-body differences are shown. Changing request/trace IDs, Date, and Server-Timing headers are ignored by default. Pairing is an aid, not identifier correlation. Masked values are unknown: placeholder numbering and changes entirely hidden by redaction do not count as differences. See [report semantics and limits](docs/reports.md).
+
+```sh
+bugparcel diff before.har after.har --before-logs before.log --logs after.log -o comparison.html --theme night
+bugparcel replay checkout.har --request req-5 --tool curl --include-bodies -o replay.sh
+bugparcel replay checkout.har --request req-5 --tool httpie -o replay-httpie.sh
+```
+
+Each request has **Copy / Download** options for cURL, HTTPie, GitHub issue, Jira wiki, Slack, and Markdown. Replay output is a **POSIX shell template** for sh/bash/zsh, including on Windows through WSL or Git Bash. BugParcel never executes it. Review the destination and supply the required `BP_*` variables yourself. `BP_URL_*` values must already be percent-encoded; header variables contain raw values. A masked, missing, excluded, or truncated request body requires a complete `BP_REQUEST_BODY`, which may be explicitly empty. These are normalized text replays, not byte-identical recordings.
+
+Choose an HTML theme in **Export report**, open the downloaded standalone file, then use browser **Print / Save as PDF** for the print layout. No scripts or external chart library are needed.
 
 ### Supported identifiers
 
@@ -378,12 +403,18 @@ HTML reports escape imported strings and carry a restrictive CSP with no scripts
 | GET | `/api/health` | Local engine status |
 | GET | `/api/sample` | Fictional HAR and logs |
 | GET | `/api/sample/security` | Synthetic security demo and example policy |
+| GET | `/api/sample/fixed` | Synthetic successful checkout for comparison |
 | POST | `/api/analyze` | Normalize, correlate, and redact |
 | POST | `/api/export/html` | Standalone HTML report |
 | POST | `/api/export/markdown` | Markdown report |
 | POST | `/api/export/json` | Normalized incident JSON |
+| POST | `/api/request/{req-N}/snippet/{format}` | Redacted curl, httpie, github, jira, slack, or markdown snippet |
+| POST | `/api/compare` | Compare `{before: AnalysisInput, after: AnalysisInput, ignoreVolatileHeaders: true}` |
+| POST | `/api/compare/requests` | Compare `{incident: AnalysisInput, beforeId: "req-1", afterId: "req-5", ignoreVolatileHeaders: true}` |
+| POST | `/api/compare/export/{format}` | Comparison HTML, Markdown, or JSON |
+| POST | `/api/compare/requests/export/{format}` | Selected-request comparison HTML, Markdown, or JSON |
 
-All POST endpoints use the same JSON input:
+Analysis, report export, and request snippet endpoints use this JSON input. Comparison endpoints wrap it as shown above:
 
 ```json
 {
@@ -398,19 +429,20 @@ All POST endpoints use the same JSON input:
   "timestampHints": false,
   "profile": "standard",
   "policyYaml": null,
-  "decodeContent": true
+  "decodeContent": true,
+  "reportTheme": "paper"
 }
 ```
 
-Omit `enabledCategories` to use the selected profile's defaults. An explicit empty array disables all categories. Omit `profile`/`decodeContent` to honor the policy defaults (otherwise standard/on). Paranoid-only detectors run only in the paranoid profile. Categories are `CREDENTIAL`, `EMAIL`, `IP`, `PHONE`, `CUSTOM`, `POLICY`, `CARD`, `IBAN`, `PESEL`, `SUSPECT`. The normalized export excludes original input files, policy text, and the private review map. A CLI-generated title can use the input filename. Internal report IDs (`req-1`, `log-1`) preserve links after redaction. Schema 1.4 adds `incident.security` with profile/decoder/policy counts and a bounded self-check.
+Omit `enabledCategories` to use the selected profile's defaults. An explicit empty array disables all categories. Omit `profile`/`decodeContent` to honor the policy defaults (otherwise standard/on). Paranoid-only detectors run only in the paranoid profile. Categories are `CREDENTIAL`, `EMAIL`, `IP`, `PHONE`, `CUSTOM`, `POLICY`, `CARD`, `IBAN`, `PESEL`, `SUSPECT`. The normalized export excludes original input files, policy text, and the private review map. A CLI-generated title can use the input filename. Internal report IDs (`req-1`, `log-1`) preserve links after redaction. Schema **1.5** retains `incident.security` and adds `incident.report`: sanitized timeline references, waterfall timing data, summary IDs/counts, error signatures, and theme. Themes are `paper` (default), `night`, and `contrast`.
 
-`/api/analyze` also returns `findings`, separate from `incident`. Each finding includes a stable ID, original value, categories, source locations, field-scoping flag, substitution count, and ambiguity reasons/counts. Pass IDs in `excludedFindingIds` to keep them or `redactFindingIds` to override ambiguity and redact them. Omit an ID from both sets for Automatic. The same choices are accepted by all export routes. IDs are local review identifiers, not bearer credentials. Export schema `1.2` records exclusion/explicit-redaction counts, an automatically kept ambiguity count, and actual per-category replacement counts, with no original review list or IDs.
+`/api/analyze` also returns `findings`, separate from `incident`. Each finding includes a stable ID, original value, categories, source locations, field-scoping flag, substitution count, and ambiguity reasons/counts. Pass IDs in `excludedFindingIds` to keep them or `redactFindingIds` to override ambiguity and redact them. Omit an ID from both sets for Automatic. The same choices are accepted by all export routes. IDs are local review identifiers, not bearer credentials. Exports record exclusion/explicit-redaction counts, an automatically kept ambiguity count, and actual per-category replacement counts, with no original review list or IDs.
 
 ## Verification
 
 ```sh
 mvn verify
-node --check src/main/resources/static/app.js
+npm run check
 ```
 
 The automated suite covers correlation precedence and identifier namespaces, shared traces, unmatched evidence, structured and multiline logs, malformed inputs, secret removal from every export, encoded query parameters, consistent placeholders, overlapping custom rules, concurrent analysis isolation, hostile HTML/Markdown, origin/host guards, and request size limits. CI builds the runnable JAR on Java 17. There is no frontend dependency installation or bundling step.

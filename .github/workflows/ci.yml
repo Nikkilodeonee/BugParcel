@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --check src/main/resources/static/app.js
+      - run: npm run check
       - run: mvn -B verify
       - name: Synthetic redaction precision and recall
         if: ${{ always() && hashFiles('target/redaction-corpus-metrics.json') != '' }}
@@ -28,11 +28,14 @@ jobs:
           if-no-files-found: ignore
       - name: Command-line smoke test
         run: |
-          java -jar target/bugparcel-1.2.0.jar sample --dir "$RUNNER_TEMP/sample"
-          java -jar target/bugparcel-1.2.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
+          java -jar target/bugparcel-1.3.0.jar sample --dir "$RUNNER_TEMP/sample"
+          java -jar target/bugparcel-1.3.0.jar report "$RUNNER_TEMP/sample/checkout.har" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/report.html"
           test -s "$RUNNER_TEMP/report.html"
+          java -jar target/bugparcel-1.3.0.jar diff "$RUNNER_TEMP/sample/checkout.har" "$RUNNER_TEMP/sample/checkout.har" --before-logs "$RUNNER_TEMP/sample/checkout.ndjson" --logs "$RUNNER_TEMP/sample/checkout.ndjson" -o "$RUNNER_TEMP/comparison.json"
+          java -jar target/bugparcel-1.3.0.jar replay "$RUNNER_TEMP/sample/checkout.har" --request req-5 -o "$RUNNER_TEMP/replay.sh"
+          sh -n "$RUNNER_TEMP/replay.sh"
       - uses: actions/upload-artifact@v4
         with:
           name: bugparcel-jar
-          path: target/bugparcel-1.2.0.jar
+          path: target/bugparcel-1.3.0.jar
           retention-days: 14

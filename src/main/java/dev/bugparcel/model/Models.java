@@ -2,6 +2,8 @@ package dev.bugparcel.model;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,8 +22,14 @@ public final class Models {
         boolean timestampHints,
         @Size(max=16) String profile,
         @Size(max=65_536) String policyYaml,
-        Boolean decodeContent
+        Boolean decodeContent,
+        @Size(max=16) String reportTheme
     ) {
+        public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
+                             boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds,boolean timestampHints,
+                             String profile,String policyYaml,Boolean decodeContent) {
+            this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,redactFindingIds,timestampHints,profile,policyYaml,decodeContent,null);
+        }
         public AnalysisInput(String har,String logs,String title,Set<String> enabledCategories,List<String> customValues,
                              boolean includeBodies,Set<String> excludedFindingIds,Set<String> redactFindingIds,boolean timestampHints) {
             this(har,logs,title,enabledCategories,customValues,includeBodies,excludedFindingIds,redactFindingIds,timestampHints,null,null,null);
@@ -58,9 +66,26 @@ public final class Models {
     public record SelfCheck(int remainingValues, boolean completed, int omittedIssues, List<SelfCheckIssue> issues) {}
     public record SecurityReview(String profile, boolean decodeContent, boolean policyApplied, int policyRules,
         int allowlistRules, int decodedValues, int decodedSkipped, boolean scanLimited, SelfCheck selfCheck) {}
+    public record TimelineEvent(String kind, String refId, String timestamp, Long offsetMs, boolean error, boolean firstError) {}
+    public record WaterfallRow(String requestId, double startMs, double durationMs) {}
+    public record ErrorGroup(String id, String signature, String representativeLogId, List<String> logIds) {}
+    public record ReportView(String theme, List<String> failedRequestIds, String slowestRequestId,
+        Map<String,Integer> errorsByLogger, String firstStackLogId, boolean firstStackTimed,
+        List<ErrorGroup> errorGroups, List<TimelineEvent> timeline, String timelineStart,
+        int untimedEvents, List<WaterfallRow> waterfall, double waterfallDurationMs, int untimedRequests) {}
     public record Incident(String schemaVersion, String title, String createdAt, List<RequestEntry> requests,
         List<LogEntry> logs, List<String> warnings, List<RedactionCount> redactions, boolean includesBodies,
-        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation, SecurityReview security) {}
+        int excludedValues, int ambiguousValuesKept, int forcedValues, CorrelationReview correlation, SecurityReview security, ReportView report) {}
     public record Analysis(Incident incident, int failedRequests, int matchedRequests, int unmatchedLogs,
         int redactedOccurrences, List<FindingReview> findings) {}
+    public record ComparisonInput(@NotNull @Valid AnalysisInput before, @NotNull @Valid AnalysisInput after, Boolean ignoreVolatileHeaders) {}
+    public record RequestComparisonInput(@NotNull @Valid AnalysisInput incident, @NotBlank @Size(max=32) String beforeId,
+        @NotBlank @Size(max=32) String afterId, Boolean ignoreVolatileHeaders) {}
+    public record FieldDifference(String field, String before, String after, boolean truncated) {}
+    public record RequestDifference(String kind, String beforeId, String afterId, List<FieldDifference> fields) {}
+    public record ErrorDifference(String signature, int beforeCount, int afterCount, String beforeLogId, String afterLogId) {}
+    public record ComparisonSummary(int added, int removed, int changed, int unchanged, int beforeFailures, int afterFailures,
+        int beforeErrors, int afterErrors) {}
+    public record Comparison(Incident before, Incident after, ComparisonSummary summary, List<RequestDifference> requests,
+        List<ErrorDifference> errors, List<String> notes) {}
 }

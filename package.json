@@ -1,1 +1,9 @@
-{"name":"bugparcel-interface","private":true,"version":"1.2.0","type":"module","scripts":{"check":"node --check src/main/resources/static/app.js"}}
+{
+  "name": "bugparcel-interface",
+  "private": true,
+  "version": "1.3.0",
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/main/resources/static/app.js && node --check src/main/resources/static/reports.js && node --check src/main/resources/static/request-id-guides.js"
+  }
+}

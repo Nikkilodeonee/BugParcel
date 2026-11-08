@@ -15,6 +15,7 @@ public class IncidentService {
     public Analysis analyze(AnalysisInput input) {
         if(input.har()==null || input.har().isBlank()) throw new IllegalArgumentException("Choose a HAR file first.");
         if(input.har().length()>12_000_000 || (input.logs()!=null && input.logs().length()>12_000_000)) throw new IllegalArgumentException("Each input must be smaller than 12 MB of text.");
+        ReportInsights.theme(input.reportTheme());
         List<String> warnings=new ArrayList<>();
         var policy=RedactionPolicy.fromYaml(input.policyYaml());
         String profile=input.profile()==null?policy.defaultProfile():RedactionPolicy.profile(input.profile());
@@ -48,7 +49,8 @@ public class IncidentService {
         if(!check.completed()) warnings.add("Export self-check did not finish all checks within its bounds. Treat its count as incomplete.");
         var security=new SecurityReview(profile,decode,policy.applied(),policy.ruleCount(),policy.allowlistCount(),
             parsedHar.decodedValues()+redactor.decodedValues(),parsedHar.decodedSkipped()+redactor.decodedSkipped(),limited,check);
-        var incident=new Incident("1.4",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced,correlation,security);
+        var report=ReportInsights.build(cleanRequests,cleanLogs,input.reportTheme());
+        var incident=new Incident("1.5",cleanTitle,Instant.now().toString(),cleanRequests,cleanLogs,List.copyOf(new LinkedHashSet<>(warnings)),summary,input.includeBodies(),exclusions,ambiguousKept,forced,correlation,security,report);
         return new Analysis(incident,(int)requests.stream().filter(r->r.status()==0 || r.status()>=400).count(),
             (int)requests.stream().filter(r->!r.logIds().isEmpty()).count(),(int)logs.stream().filter(l->!linked.contains(l.id())).count(),
             redactor.totalRedactions(),findings);

@@ -1,4 +1,5 @@
 import { requestIdGuides } from './request-id-guides.js';
+import { createReportFeatures } from './reports.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -9,11 +10,13 @@ state.enabled.add('POLICY');
 const matchLabels = {'request-id':'Request ID match','shared-request':'Shared request ID context','trace-id':'Trace ID match','shared-trace':'Shared trace context','correlation-id':'Correlation ID match','shared-correlation':'Shared correlation context',unmatched:'No shared identifier'};
 Object.assign(matchLabels, {'cf-ray':'Cloudflare Ray ID match','shared-ray':'Shared Cloudflare Ray context','aws-trace-id':'AWS trace match','shared-aws-trace':'Shared AWS trace context','azure-root-id':'Azure root context','shared-azure-root':'Shared Azure root context'});
 let pending, revision = 0, toastTimer;
+const reports=createReportFeatures({state,payload,api,escape,renderLogCard,downloadBlob,toast,message,switchTab,renderLogs,loadSample});
 
-function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:state.enabled?[...state.enabled]:null,customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced],timestampHints:state.timestampHints,profile:state.profile,policyYaml:state.policyYaml,decodeContent:state.decodeContent}; }
+function payload() { return {har:state.har,logs:state.logs,title:state.title,enabledCategories:state.enabled?[...state.enabled]:null,customValues:state.custom,includeBodies:state.includeBodies,excludedFindingIds:[...state.exclusions],redactFindingIds:[...state.forced],timestampHints:state.timestampHints,profile:state.profile,policyYaml:state.policyYaml,decodeContent:state.decodeContent,reportTheme:state.reportTheme}; }
 function message(text='') { $('#feedback').textContent=text; $('#feedback').hidden=!text; }
 function toast(text) { clearTimeout(toastTimer); $('#toast').textContent=text; $('#toast').hidden=false; toastTimer=setTimeout(()=>$('#toast').hidden=true,4500); }
 function setBusy(busy) {
+  reports.busy(busy);
   state.busy=busy;$('#busy-line').hidden=!busy;$('#export-button').disabled=busy||!state.analysis;$('#reset-review').disabled=busy||(state.exclusions.size===0&&state.forced.size===0);$$('[data-action="sample"],[data-action="security-sample"],#apply-sample-policy').forEach(b=>b.disabled=busy);
   for(const id of ['redaction-profile','decode-content','policy-file','clear-policy','include-bodies','custom-value'])$(`#${id}`).disabled=busy;
   $$('[data-finding],#custom-form button').forEach(b=>b.disabled=busy);
@@ -44,6 +47,7 @@ async function api(path,input,signal) {
   return response;
 }
 async function analyze() {
+  reports.invalidate();
   pending?.abort();const current=++revision;
   message();updateFiles();
   if(!state.har) {state.analysis=null;render();return;}
@@ -64,8 +68,8 @@ async function loadSample(variant='checkout') {
   if(state.har&&!state.sample) {toast('Clear the current session before loading the sample, so your imported evidence stays available.');return;}
   setBusy(true);message();
   try {
-    const response=await fetch(variant==='security'?'/api/sample/security':'/api/sample');if(!response.ok)throw new Error('The sample files could not be loaded. Is the local engine running?');
-    const sample=await response.json();clearSession(false);state.har=sample.har;state.logs=sample.logs;state.title=sample.title;state.sample=true;state.samplePolicy=sample.policyYaml||null;
+    const response=await fetch(variant==='security'?'/api/sample/security':variant==='fixed'?'/api/sample/fixed':'/api/sample');if(!response.ok)throw new Error('The sample files could not be loaded. Is the local engine running?');
+    const sample=await response.json();clearSession(false,true);state.har=sample.har;state.logs=sample.logs;state.title=sample.title;state.sample=true;state.samplePolicy=sample.policyYaml||null;
     state.files={har:{name:`${variant}.har`,size:new Blob([sample.har]).size},logs:{name:`${variant}.ndjson`,size:new Blob([sample.logs]).size}};
     state.selected=null;state.search='';$('#request-search').value='';state.filter='all';state.tab='requests';
     await analyze();
@@ -76,14 +80,16 @@ async function importFile(key,file) {
   if(file.size>10*1024*1024){message(`${file.name} is larger than 10 MB. Export a shorter recording around the incident.`);return;}
   try {
     const input=await file.text();if(!input.trim())throw new Error('This file is empty. Choose a recording with some evidence.');
-    if(state.sample){clearSession(false);}
+    if(state.sample){clearSession(false,true);}
     state[key]=input;state.files[key]={name:file.name,size:file.size};state.sample=false;state.selected=null;
     if(key==='har'&&state.title==='Untitled incident')state.title=file.name.replace(/\.(har|json)$/i,'').substring(0,160)||'Untitled incident';
     await analyze();
     if(!state.har)toast('Logs added. Add a HAR file to connect the evidence.');
   }catch(error){message(error.message);}finally{$(`#${key}-file`).value='';}
 }
-function clearSession(notify=true) {
+function clearSession(notify=true,preserveBaseline=false) {
+  const saved=preserveBaseline&&state.baseline?Object.fromEntries(['baseline','baselineLabel','profile','policyYaml','policyName','decodeContent','enabled','custom','exclusions','forced','includeBodies','reportTheme','timestampHints'].map(key=>[key,state[key] instanceof Set?new Set(state[key]):Array.isArray(state[key])?[...state[key]]:state[key]])):null;
+  reports.clear();
   state.profile=null;state.policyYaml=null;state.policyName='';state.decodeContent=null;state.samplePolicy=null;$('#policy-file').value='';
   state.timestampHints=false;$('#timestamp-hints').checked=false;
   pending?.abort();revision++;state.har='';state.logs='';state.title='Untitled incident';state.files={har:null,logs:null};state.sample=false;state.analysis=null;state.selected=null;state.custom=[];state.exclusions.clear();state.forced.clear();state.reviewSearch='';state.reviewPage=0;state.enabled=new Set(['CREDENTIAL','EMAIL','IP','PHONE','CUSTOM']);state.includeBodies=false;state.filter='all';state.logFilter='all';state.tab='requests';state.detailTab='evidence';state.search='';state.logSearch='';
@@ -92,6 +98,7 @@ function clearSession(notify=true) {
   $('#review-search').value='';
   $('#self-check').replaceChildren();$('#policy-status').textContent='No team policy loaded';$('#redaction-profile').value='standard';$('#decode-content').checked=true;
   state.enabled.add('POLICY');
+  if(saved)Object.assign(state,saved);
   for(const id of ['stats','request-rows','request-detail','log-list','redaction-options','custom-chips','notes-list','export-summary','review-rows','correlation-diagnostics','detected-formats'])$(`#${id}`).replaceChildren();
   $('#export-status').textContent='';setBusy(false);message();render();if(notify)toast('Session cleared. Your original files are untouched.');
 }
@@ -110,7 +117,7 @@ function render() {
     ['values redacted',result.redactedOccurrences,'Consistent across the evidence','']
   ].map(([label,value,note,color])=>`<div class="stat ${color}" title="${escape(note)}"><b>${value}</b><span>${label}</span></div>`).join('');
   $('#requests-count').textContent=incident.requests.length;$('#logs-count').textContent=incident.logs.length;$('#redactions-count').textContent=result.redactedOccurrences;
-  renderSecurity();renderCorrelation();renderTabs();renderRequests();renderLogs();renderRedactions();
+  renderSecurity();renderCorrelation();renderTabs();renderRequests();renderLogs();renderRedactions();reports.render();
   $('#notes-label').textContent=`Analysis notes${incident.warnings.length?` · ${incident.warnings.length}`:''}`;
   $('#notes-list').innerHTML=incident.warnings.length?incident.warnings.map(w=>`<li>${escape(w)}</li>`).join(''):'<li>No additional format or correlation warnings.</li>';
 }
@@ -133,6 +140,7 @@ function renderSecurity() {
 async function importPolicy(file) {
   if(!file)return;
   if(file.size>65536){message('Policy files must be at most 64 KiB.');return;}
+  reports.invalidate();
   pending?.abort();const current=++revision;pending=new AbortController();setBusy(true);message();
   try{
     const text=await file.text();
@@ -196,7 +204,7 @@ function renderDetail(request) {
     content=`<div class="match-banner ${kind==='unmatched'?'unmatched':kind.startsWith('shared')?'shared':''}">${icon(kind==='unmatched'?'help':'link')}<span>${escape(matchLabels[kind]||kind)}${logs.length?` · ${logs.length} log ${logs.length===1?'entry':'entries'}`:''}</span></div><div class="correlation-chip">${Object.entries(r.correlationIds).map(([key,value])=>`<span>${escape(key)}: ${replacements(value)}</span>`).join('')}</div>`;
     if(Object.values(r.correlationIds).some(value=>value.includes('[REDACTED_')))content+='<p class="detail-note">Displayed IDs are redacted. These links were matched using the original IDs before redaction.</p>';
     if(kind.startsWith('shared'))content+='<p class="detail-note">This identifier is shared by multiple requests. These logs describe shared context, not an exclusive match.</p>';
-    content+=logs.length?`<h3 class="mini-heading">Linked server logs</h3>${logs.map(renderLogCard).join('')}`:`<div class="empty-evidence">${icon('link')}${state.logs?'No log entries share a supported identifier with this request.':'Add server logs to connect the other side of this request.'}<br><span class="detail-note">Time alone is not treated as proof.</span></div>`;
+    content+=logs.length?`<h3 class="mini-heading">Linked server logs</h3>${reports.grouped(logs,renderLogCard)}`:`<div class="empty-evidence">${icon('link')}${state.logs?'No log entries share a supported identifier with this request.':'Add server logs to connect the other side of this request.'}<br><span class="detail-note">Time alone is not treated as proof.</span></div>`;
     const review=state.analysis.incident.correlation;
     if(review.timestampHintsEnabled&&!logs.length) {
       const hints=review.timestampHints.filter(h=>h.requestId===r.id);
@@ -204,15 +212,15 @@ function renderDetail(request) {
     }
   }else if(state.detailTab==='headers')content=`<h3 class="mini-heading">Request headers</h3>${headerTable(r.requestHeaders)}<h3 class="mini-heading">Response headers</h3>${headerTable(r.responseHeaders)}`;
   else content=state.includeBodies?`<h3 class="mini-heading">Request body</h3>${r.requestBody?`<pre class="body-code">${replacements(r.requestBody)}</pre>`:'<p class="detail-note">No text request body recorded.</p>'}<h3 class="mini-heading">Response body</h3>${r.responseBody?`<pre class="body-code">${replacements(r.responseBody)}</pre>`:'<p class="detail-note">No supported text response body recorded.</p>'}`:`<div class="empty-evidence">${icon('shield')}Bodies are excluded from this report.<br><button class="text-button" data-action="redactions">Manage in Redactions ${icon('arrow')}</button></div>`;
-  panel.innerHTML=`<div class="detail-header"><div class="detail-eyebrow">Request details<span>${escape(r.id)}</span></div><div class="detail-path">${method(r)}${escape(parts.path)}</div><div class="detail-meta">${status(r)}<span>${escape(r.statusText)}</span><span>·</span><span>${duration(r.durationMs)}</span><span>·</span><span>${escape(time(r.timestamp))}</span></div></div><div class="detail-nav" aria-label="Request detail view">${[['evidence','Evidence'],['headers','Headers'],['bodies','Bodies']].map(([key,label])=>`<button class="${state.detailTab===key?'active':''}" data-detail="${key}" aria-pressed="${state.detailTab===key}">${label}</button>`).join('')}</div><div class="detail-content">${content}</div>`;
+  panel.innerHTML=`<div class="detail-header"><div class="detail-eyebrow">Request details<span>${escape(r.id)}</span></div><div class="detail-path">${method(r)}${escape(parts.path)}</div><div class="detail-meta">${status(r)}<span>${escape(r.statusText)}</span><span>·</span><span>${duration(r.durationMs)}</span><span>·</span><span>${escape(time(r.timestamp))}</span></div>${reports.snippetTools(r.id)}</div><div class="detail-nav" aria-label="Request detail view">${[['evidence','Evidence'],['headers','Headers'],['bodies','Bodies']].map(([key,label])=>`<button class="${state.detailTab===key?'active':''}" data-detail="${key}" aria-pressed="${state.detailTab===key}">${label}</button>`).join('')}</div><div class="detail-content">${content}</div>`;
 }
 function renderLogs() {
   const incident=state.analysis?.incident;if(!incident)return;
   $('#unmatched-log-count').textContent=`${state.analysis.unmatchedLogs} unlinked`;
   $$('[data-log-filter]').forEach(b=>{b.classList.toggle('selected',b.dataset.logFilter===state.logFilter);b.setAttribute('aria-pressed',b.dataset.logFilter===state.logFilter);});
   const linked=new Set(incident.requests.flatMap(r=>r.logIds));
-  const logs=incident.logs.filter(l=>(state.logFilter==='all'||(state.logFilter==='unmatched'?!linked.has(l.id):state.logFilter==='ERROR'?['ERROR','FATAL'].includes(l.level):l.level===state.logFilter))&&`${l.message} ${l.logger} ${l.stackTrace} ${Object.values(l.correlationIds).join(' ')}`.toLowerCase().includes(state.logSearch.toLowerCase()));
-  $('#log-list').innerHTML=logs.length?logs.map(l=>`<article class="logbook-entry"><div><div class="log-line-top">${level(l.level)}<span class="log-time">${escape(time(l.timestamp))}</span></div>${incident.requests.filter(r=>r.logIds.includes(l.id)).map(r=>`<button class="logbook-link" data-go-request="${escape(r.id)}">${escape(r.method)} ${escape(urlParts(r.url).path)}</button>`).join('')||'<span class="unlinked-label">No matching browser request</span>'}</div><div><div class="log-message">${replacements(l.message)}</div><div class="log-logger">${escape(l.logger||'Text log')} · source line ${l.sourceLine}</div>${l.stackTrace?`<details class="stack-details"><summary>Inspect stack trace</summary><pre>${replacements(l.stackTrace)}</pre></details>`:''}</div></article>`).join(''):`<div class="no-results">${incident.logs.length?'No log entries match this view.':'No server logs imported yet. Add a log file above.'}</div>`;
+  const logs=incident.logs.filter(l=>(state.logFilter==='all'||(state.logFilter==='unmatched'?!linked.has(l.id):state.logFilter==='ERROR'?['ERROR','FATAL','CRITICAL'].includes(l.level):l.level===state.logFilter))&&`${l.id} ${l.message} ${l.logger} ${l.stackTrace} ${Object.values(l.correlationIds).join(' ')}`.toLowerCase().includes(state.logSearch.toLowerCase()));
+  $('#log-list').innerHTML=logs.length?reports.grouped(logs,l=>`<article class="logbook-entry"><div><div class="log-line-top">${level(l.level)}<span class="log-time">${escape(time(l.timestamp))}</span></div>${incident.requests.filter(r=>r.logIds.includes(l.id)).map(r=>`<button class="logbook-link" data-go-request="${escape(r.id)}">${escape(r.method)} ${escape(urlParts(r.url).path)}</button>`).join('')||'<span class="unlinked-label">No matching browser request</span>'}</div><div><div class="log-message">${replacements(l.message)}</div><div class="log-logger">${escape(l.logger||'Text log')} · source line ${l.sourceLine}</div>${l.stackTrace?`<details class="stack-details"><summary>Inspect stack trace</summary><pre>${replacements(l.stackTrace)}</pre></details>`:''}</div></article>`):`<div class="no-results">${incident.logs.length?'No log entries match this view.':'No server logs imported yet. Add a log file above.'}</div>`;
 }
 function renderRedactions() {
   if(!state.analysis)return;
@@ -249,6 +257,7 @@ function renderReview() {
 function switchTab(tab,focus=false) {state.tab=tab;renderTabs();if(focus)$(`#tab-${tab}`).focus();}
 function showExport() {
   if(!state.analysis||state.busy)return;
+  $('#report-theme').value=state.reportTheme;
   const a=state.analysis;const disabled=a.incident.redactions.filter(c=>!c.enabled&&c.occurrences>0);
   $('#export-summary').innerHTML=`<div><strong>${a.incident.requests.length}</strong><small>browser requests</small></div><div><strong>${a.incident.logs.length}</strong><small>server log entries</small></div><div><strong>${a.redactedOccurrences}</strong><small>values redacted</small></div>${disabled.length?`<div class="export-warning">Disabled categories: ${disabled.map(c=>escape(c.label.toLowerCase())).join(', ')}. Their values may remain visible.</div>`:''}${a.incident.excludedValues?`<div class="export-warning">You chose to keep ${a.incident.excludedValues} detected ${a.incident.excludedValues===1?'value':'values'}. Another overlapping rule can still hide them. The review list and its IDs are excluded from the report; kept values can appear in the evidence.</div>`:''}`;
   if(a.incident.ambiguousValuesKept)$('#export-summary').insertAdjacentHTML('beforeend',`<div class="export-warning">${a.incident.ambiguousValuesKept} address ${a.incident.ambiguousValuesKept===1?'value has':'values have'} ambiguous occurrences kept by automatic rules. Inspect these in Redactions before sharing.</div>`);
@@ -331,7 +340,7 @@ document.addEventListener('keydown',event=>{
   const editing=event.target.matches('input,textarea,select,[contenteditable="true"]');
   if(event.key==='/'&&!editing&&!$('dialog[open]')&&state.analysis){event.preventDefault();switchTab('requests');$('#request-search').focus();}
   if(event.target.matches('[role="tab"]')&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
-    event.preventDefault();const tabs=['requests','logs','redactions'];let next=tabs.indexOf(state.tab);if(event.key==='Home')next=0;else if(event.key==='End')next=2;else next=(next+(event.key==='ArrowRight'?1:2))%3;switchTab(tabs[next],true);
+    event.preventDefault();const tabs=$$('[role="tab"][data-tab]').map(t=>t.dataset.tab);let next=tabs.indexOf(state.tab);if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else next=(next+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length;switchTab(tabs[next],true);
   }
 });
 for(const dialog of $$('dialog'))dialog.addEventListener('click',event=>{if(event.target===dialog){const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)dialog.close();}});

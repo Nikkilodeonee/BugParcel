@@ -32,6 +32,28 @@ class IncidentApiTest {
             assertThat(response.getContentAsString()).doesNotContain("dev-only-token-not-a-real-secret","alex.morgan@example.test","10.24.8.16","demo-session-value");
         }
     }
+    @Test void timelineReplayComparisonAndThemeEndpointsUseSanitizedEvidence()throws Exception {
+        var before=mapper.readTree(input());
+        var fixed=mapper.readTree(mvc.perform(get("/api/sample/fixed")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        var after=mapper.createObjectNode().put("har",fixed.path("har").asText()).put("logs",fixed.path("logs").asText()).put("reportTheme","contrast").put("includeBodies",true);
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(after.toString())).andExpect(status().isOk())
+            .andExpect(jsonPath("$.failedRequests").value(0)).andExpect(jsonPath("$.incident.report.theme").value("contrast")).andExpect(jsonPath("$.incident.report.timeline.length()").value(15));
+        for(String format:new String[]{"curl","httpie","github","jira","slack","markdown"}) {
+            String body=mvc.perform(post("/api/request/req-5/snippet/"+format).contentType(MediaType.APPLICATION_JSON).content(before.toString())).andExpect(status().isOk()).andExpect(header().exists("Content-Disposition")).andReturn().getResponse().getContentAsString();
+            assertThat(body).doesNotContain("alex.morgan@example.test","dev-only-token-not-a-real-secret","demo-session-value");
+        }
+        var compare=mapper.createObjectNode();compare.set("before",before);compare.set("after",after);
+        mvc.perform(post("/api/compare").contentType(MediaType.APPLICATION_JSON).content(compare.toString())).andExpect(status().isOk())
+            .andExpect(jsonPath("$.summary.beforeFailures").value(2)).andExpect(jsonPath("$.summary.afterFailures").value(0));
+        for(String format:new String[]{"html","markdown","json"})assertThat(mvc.perform(post("/api/compare/export/"+format).contentType(MediaType.APPLICATION_JSON).content(compare.toString())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).doesNotContain("alex.morgan@example.test","dev-only-token-not-a-real-secret");
+        var request=mapper.createObjectNode().put("beforeId","req-1").put("afterId","req-5");request.set("incident",before);
+        mvc.perform(post("/api/compare/requests").contentType(MediaType.APPLICATION_JSON).content(request.toString())).andExpect(status().isOk()).andExpect(jsonPath("$.before.requests.length()").value(1)).andExpect(jsonPath("$.after.requests.length()").value(1));
+        mvc.perform(post("/api/compare/requests/export/html").contentType(MediaType.APPLICATION_JSON).content(request.toString())).andExpect(status().isOk());
+        after.put("reportTheme","untrusted");
+        mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(after.toString())).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/request/missing/snippet/curl").contentType(MediaType.APPLICATION_JSON).content(before.toString())).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/compare").contentType(MediaType.APPLICATION_JSON).content("{\"before\":null,\"after\":{}}" )).andExpect(status().isBadRequest());
+    }
     @Test void malformedInputGetsAnActionableErrorWithoutEchoingTheContent()throws Exception {
         mvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content("{\"har\":\"private-invalid-data\"}"))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("not valid JSON"))).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-invalid-data"))));
